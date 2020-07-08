@@ -394,6 +394,7 @@ class IbutsuArchiver(object):
 
         id = report._ibutsu["id"]
         data = report._ibutsu["data"]
+        data["metadata"]["user_properties"] = {key: value for key, value in report.user_properties}
         data["metadata"]["statuses"][report.when] = (report.outcome, xfail)
         data["metadata"]["durations"][report.when] = report.duration
         data["result"] = overall_test_status(data["metadata"]["statuses"])
