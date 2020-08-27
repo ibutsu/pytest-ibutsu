@@ -96,7 +96,7 @@ def overall_test_status(statuses):
     for when, status in statuses.items():
         if when == "call" and status[1] and status[0] == "skipped":
             return "xfailed"
-        elif when == "call" and status[1] and status[0] == "failed":
+        elif when == "call" and status[1] and status[0] == "passed":
             return "xpassed"
         elif (when == "setup" or when == "teardown") and status[0] == "failed":
             return "error"
@@ -143,9 +143,14 @@ class IbutsuArchiver(object):
             self.extra_data.update({"project", os.environ.get("IBUTSU_PROJECT")})
 
     def _status_to_summary(self, status):
-        return {"failed": "failures", "error": "errors", "skipped": "skips", "tests": "tests"}.get(
-            status
-        )
+        return {
+            "failed": "failures",
+            "error": "errors",
+            "skipped": "skips",
+            "xfailed": "xfailures",
+            "xpassed": "xpasses",
+            "tests": "tests",
+        }.get(status)
 
     def _save_run(self, run):
         if not self.temp_path:
@@ -182,7 +187,7 @@ class IbutsuArchiver(object):
 
     def shutdown(self):
         # Gather the summary before building the archive
-        summary = {"failures": 0, "skips": 0, "errors": 0, "tests": 0}
+        summary = {"failures": 0, "skips": 0, "errors": 0, "xfailures": 0, "xpasses": 0, "tests": 0}
         for result in self._results.values():
             key = self._status_to_summary(result["result"])
             if key in summary:
@@ -204,7 +209,14 @@ class IbutsuArchiver(object):
         if not self.run:
             run = {
                 "duration": 0,
-                "summary": {"failures": 0, "skips": 0, "errors": 0, "tests": 0},
+                "summary": {
+                    "failures": 0,
+                    "skips": 0,
+                    "errors": 0,
+                    "xfailures": 0,
+                    "xpasses": 0,
+                    "tests": 0,
+                },
                 "metadata": self.extra_data,
                 "source": getattr(self, "source", "local"),
                 "start_time": time.time(),
