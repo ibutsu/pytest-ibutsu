@@ -4,6 +4,7 @@ import shutil
 import tarfile
 import time
 import uuid
+from datetime import datetime
 from tempfile import gettempdir
 from tempfile import NamedTemporaryFile
 
@@ -219,7 +220,7 @@ class IbutsuArchiver(object):
                 },
                 "metadata": self.extra_data,
                 "source": getattr(self, "source", "local"),
-                "start_time": time.time(),
+                "start_time": datetime.utcnow(),
             }
             self.run = self.add_run(run=run)
         return self.run["id"]
@@ -340,7 +341,7 @@ class IbutsuArchiver(object):
                 params = {}
         else:
             params = {}
-        start_time = time.time()
+        start_time = datetime.utcnow()
         fspath = item.location[0] or item.fspath.strpath
         if "site-packages/" in fspath:
             fspath = fspath[fspath.find("site-packages/") + 14 :]
@@ -348,7 +349,6 @@ class IbutsuArchiver(object):
             "result": "failed",
             "source": getattr(self, "source", "local"),
             "params": params,
-            "starttime": start_time,
             "start_time": start_time,
             "test_id": get_test_idents(item)[0],
             "metadata": {
