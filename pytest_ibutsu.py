@@ -23,6 +23,7 @@ CA_BUNDLE_ENVS = ["REQUESTS_CA_BUNDLE", "IBUTSU_CA_BUNDLE"]
 
 # Convert the blocker category into an Ibutsu Classification
 BLOCKER_CATEGORY_TO_CLASSIFICATION = {
+    "needs-triage": "needs_triage",
     "automation-issue": "test_failure",
     "environment-issue": "environment_failure",
     "product-issue": "product_failure",
