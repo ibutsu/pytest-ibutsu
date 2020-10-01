@@ -23,6 +23,7 @@ CA_BUNDLE_ENVS = ["REQUESTS_CA_BUNDLE", "IBUTSU_CA_BUNDLE"]
 
 # Convert the blocker category into an Ibutsu Classification
 BLOCKER_CATEGORY_TO_CLASSIFICATION = {
+    "needs-triage": "needs_triage",
     "automation-issue": "test_failure",
     "environment-issue": "environment_failure",
     "product-issue": "product_failure",
@@ -94,7 +95,7 @@ def get_name(obj):
 def overall_test_status(statuses):
     # Handle some logic for when to count certain tests as which state
     for when, status in statuses.items():
-        if when == "call" and status[1] and status[0] == "skipped":
+        if (when == "call" or when == "setup") and status[1] and status[0] == "skipped":
             return "xfailed"
         elif when == "call" and status[1] and status[0] == "passed":
             return "xpassed"
@@ -293,6 +294,16 @@ class IbutsuArchiver(object):
     def upload_artifact_from_file(self, res_id, logged_filename, filename):
         self.upload_artifact(res_id, logged_filename, filename)
 
+    def get_xfail_reason(self, data, report):
+        xfail_reason = None
+        if data["metadata"].get("markers"):
+            for marker in data["metadata"]["markers"]:
+                if marker.get("name") == "xfail":
+                    xfail_reason = marker["kwargs"].get("reason")
+        else:
+            xfail_reason = report.wasxfail.split("reason: ")[1]
+        return xfail_reason
+
     def get_skip_reason(self, data, report):
         skip_reason = None
         # first see if the reason is in the marker skip
@@ -314,11 +325,11 @@ class IbutsuArchiver(object):
                 pass
         return skip_reason
 
-    def get_skip_classification(self, skip_reason):
-        """ Get the skip classification and category from the skip_reason"""
+    def get_classification(self, reason):
+        """ Get the skip/xfail classification and category from the reason"""
         category = None
         try:
-            category = skip_reason.split("category:")[1].strip()
+            category = reason.split("category:")[1].strip()
         except IndexError:
             pass
         return BLOCKER_CATEGORY_TO_CLASSIFICATION.get(category)
@@ -411,12 +422,19 @@ class IbutsuArchiver(object):
         data["metadata"]["durations"][report.when] = report.duration
         data["result"] = overall_test_status(data["metadata"]["statuses"])
         if data["result"] == "skipped" and not data["metadata"].get("skip_reason"):
-            skip_reason = self.get_skip_reason(data, report)
-            if skip_reason:
-                data["metadata"]["skip_reason"] = skip_reason
-                classification = self.get_skip_classification(skip_reason)
-                if classification:
-                    data["metadata"]["classification"] = classification
+            reason = self.get_skip_reason(data, report)
+            if reason:
+                data["metadata"]["skip_reason"] = reason
+        elif data["result"] == "xfailed":
+            reason = self.get_xfail_reason(data, report)
+            if reason:
+                data["metadata"]["xfail_reason"] = reason
+        else:
+            reason = None
+        if reason:
+            classification = self.get_classification(reason)
+            if classification:
+                data["metadata"]["classification"] = classification
         data["duration"] = sum([v for v in data["metadata"]["durations"].values()])
         self.update_result(id, result=data)
 
