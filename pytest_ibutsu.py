@@ -142,7 +142,7 @@ class IbutsuArchiver(object):
             )
         # If the project is set via environment variables
         if os.environ.get("IBUTSU_PROJECT"):
-            self.extra_data.update({"project", os.environ.get("IBUTSU_PROJECT")})
+            self.extra_data.update({"project": os.environ.get("IBUTSU_PROJECT")})
 
     def _status_to_summary(self, status):
         return {
