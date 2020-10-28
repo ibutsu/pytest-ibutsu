@@ -5,6 +5,8 @@ import tarfile
 import time
 import uuid
 from datetime import datetime
+from http.client import BadStatusLine
+from http.client import RemoteDisconnected
 from tempfile import gettempdir
 from tempfile import NamedTemporaryFile
 
@@ -17,6 +19,8 @@ from ibutsu_client import HealthApi
 from ibutsu_client import ResultApi
 from ibutsu_client import RunApi
 from urllib3.exceptions import MaxRetryError
+from urllib3.exceptions import ProtocolError
+
 
 # A list of markers that can be filtered out
 FILTERED_MARKERS = ["parametrize"]
@@ -33,6 +37,9 @@ BLOCKER_CATEGORY_TO_CLASSIFICATION = {
 
 # Place a limit on the file-size we can upload for artifacts
 UPLOAD_LIMIT = 256 * 1024  # 256 KiB
+
+# Maximum number of times an API call is retried
+MAX_CALL_RETRIES = 3
 
 
 def safe_string(o):
@@ -107,6 +114,10 @@ def overall_test_status(statuses):
         elif when == "call" and status[0] == "failed":
             return "failed"
     return "passed"
+
+
+class TooManyRetriesError(Exception):
+    pass
 
 
 class IbutsuArchiver(object):
@@ -479,11 +490,17 @@ class IbutsuSender(IbutsuArchiver):
             if res.ready():
                 self._sender_cache.remove(res)
         try:
-            out = api_method(*args, **kwargs)
-            if "async_req" in kwargs:
-                self._sender_cache.append(out)
-            return out
-        except (MaxRetryError, ApiException) as e:
+            retries = 0
+            while retries < MAX_CALL_RETRIES:
+                try:
+                    out = api_method(*args, **kwargs)
+                    if "async_req" in kwargs:
+                        self._sender_cache.append(out)
+                    return out
+                except (RemoteDisconnected, ProtocolError, BadStatusLine):
+                    retries += 1
+            raise TooManyRetriesError('Too many retries while trying to call API')
+        except (MaxRetryError, ApiException, TooManyRetriesError) as e:
             self._has_server_error = self._has_server_error or True
             self._server_error_tbs.append(str(e))
             return None
