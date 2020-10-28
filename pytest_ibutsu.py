@@ -5,6 +5,7 @@ import tarfile
 import time
 import uuid
 from datetime import datetime
+from datetime import date
 from http.client import BadStatusLine
 from http.client import RemoteDisconnected
 from tempfile import gettempdir
@@ -18,6 +19,7 @@ from ibutsu_client import Configuration
 from ibutsu_client import HealthApi
 from ibutsu_client import ResultApi
 from ibutsu_client import RunApi
+from json import JSONEncoder
 from urllib3.exceptions import MaxRetryError
 from urllib3.exceptions import ProtocolError
 
@@ -40,6 +42,14 @@ UPLOAD_LIMIT = 256 * 1024  # 256 KiB
 
 # Maximum number of times an API call is retried
 MAX_CALL_RETRIES = 3
+
+
+class DateTimeEncoder(JSONEncoder):
+    """ Handle datetime objects in the archiver. """
+
+    def default(self, obj):
+        if isinstance(obj, (date, datetime)):
+            return obj.isoformat()
 
 
 def safe_string(o):
@@ -173,7 +183,7 @@ class IbutsuArchiver(object):
             run["metadata"] = {}
         run["metadata"].update(self.extra_data)
         with open(os.path.join(self.temp_path, "run.json"), "w") as f:
-            json.dump(run, f)
+            json.dump(run, f, cls=DateTimeEncoder)
 
     @property
     def run_id(self):
@@ -269,7 +279,7 @@ class IbutsuArchiver(object):
             result["metadata"] = {}
         result["metadata"].update(self.extra_data)
         with open(os.path.join(art_path, "result.json"), "w") as f:
-            json.dump(result, f)
+            json.dump(result, f, cls=DateTimeEncoder)
         self._results[result_id] = result
         return result
 
@@ -280,7 +290,7 @@ class IbutsuArchiver(object):
             result["metadata"] = {}
         result["metadata"].update(self.extra_data)
         with open(os.path.join(art_path, "result.json"), "w") as f:
-            json.dump(result, f)
+            json.dump(result, f, cls=DateTimeEncoder)
         self._results[id] = result
 
     def upload_artifact(self, id, filename, data):
