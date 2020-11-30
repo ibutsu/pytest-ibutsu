@@ -143,7 +143,7 @@ class IbutsuArchiver(object):
         self._results = {}
         self._run_id = None
         self.run = None
-        self.temp_path = path
+        self._temp_path = path
         self.source = source or "local"
         self.extra_data = extra_data or {}
 
@@ -175,10 +175,14 @@ class IbutsuArchiver(object):
             "tests": "tests",
         }.get(status)
 
+    @property
+    def temp_path(self):
+        if not self._temp_path:
+            self._temp_path = os.path.join(gettempdir(), self._run_id)
+            os.makedirs(self._temp_path, exist_ok=True)
+        return self._temp_path
+
     def _save_run(self, run):
-        if not self.temp_path:
-            self.temp_path = os.path.join(gettempdir(), run["id"])
-        os.makedirs(self.temp_path, exist_ok=True)
         if not run.get("metadata"):
             run["metadata"] = {}
         run["metadata"].update(self.extra_data)
@@ -256,6 +260,7 @@ class IbutsuArchiver(object):
             run["id"] = str(uuid.uuid4())
         if not run.get("source"):
             run["source"] = self.source
+        self.set_run_id(run["id"])
         self._save_run(run)
         return run
 
