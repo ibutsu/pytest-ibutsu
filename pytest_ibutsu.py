@@ -175,18 +175,23 @@ class IbutsuArchiver(object):
             "tests": "tests",
         }.get(status)
 
-    @property
-    def temp_path(self):
+    def get_temp_path(self, run):
         if not self._temp_path:
-            self._temp_path = os.path.join(gettempdir(), self._run_id)
+            self._temp_path = os.path.join(gettempdir(), run["id"])
             os.makedirs(self._temp_path, exist_ok=True)
         return self._temp_path
+
+    @property
+    def temp_path(self):
+        if not self.run:
+            raise Exception("Run ID has not yet been set")
+        return self.get_temp_path(self.run)
 
     def _save_run(self, run):
         if not run.get("metadata"):
             run["metadata"] = {}
         run["metadata"].update(self.extra_data)
-        with open(os.path.join(self.temp_path, "run.json"), "w") as f:
+        with open(os.path.join(self.get_temp_path(run), "run.json"), "w") as f:
             json.dump(run, f, cls=DateTimeEncoder)
 
     @property
@@ -260,7 +265,6 @@ class IbutsuArchiver(object):
             run["id"] = str(uuid.uuid4())
         if not run.get("source"):
             run["source"] = self.source
-        self.set_run_id(run["id"])
         self._save_run(run)
         return run
 
