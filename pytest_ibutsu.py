@@ -420,6 +420,8 @@ class IbutsuArchiver(object):
         merge_dicts(old_data, data)
         item._ibutsu["data"] = data
         yield
+        # Finish up with the result and update it
+        self.update_result(item._ibutsu["id"], result=item._ibutsu["data"])
 
     def pytest_exception_interact(self, node, call, report):
         if not hasattr(report, "_ibutsu"):
@@ -434,7 +436,7 @@ class IbutsuArchiver(object):
         self.upload_artifact_raw(id, "traceback.log", bytes(report.longreprtext, "utf8"))
         data["metadata"]["short_tb"] = short_tb
         data["metadata"]["exception_name"] = call.excinfo.type.__name__
-        self.update_result(id, result=data)
+        report._ibutsu["data"] = data
 
     def pytest_runtest_logreport(self, report):
         if not hasattr(report, "_ibutsu"):
@@ -445,7 +447,6 @@ class IbutsuArchiver(object):
         else:
             xfail = False
 
-        id = report._ibutsu["id"]
         data = report._ibutsu["data"]
         data["metadata"]["user_properties"] = {key: value for key, value in report.user_properties}
         data["metadata"]["statuses"][report.when] = (report.outcome, xfail)
@@ -466,7 +467,7 @@ class IbutsuArchiver(object):
             if classification:
                 data["metadata"]["classification"] = classification
         data["duration"] = sum([v for v in data["metadata"]["durations"].values()])
-        self.update_result(id, result=data)
+        report._ibutsu["data"] = data
 
     def pytest_sessionfinish(self):
         self.stop_timer()
