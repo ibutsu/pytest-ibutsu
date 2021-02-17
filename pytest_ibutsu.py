@@ -146,6 +146,8 @@ class IbutsuArchiver(object):
         self._temp_path = path
         self.source = source or "local"
         self.extra_data = extra_data or {}
+        # pytest session object, to be set by pytest_collection_modifyitems below
+        self._session = None
 
         # Set an env var ID
         if os.environ.get("IBUTSU_ENV_ID"):
@@ -219,12 +221,16 @@ class IbutsuArchiver(object):
 
     def shutdown(self):
         # Gather the summary before building the archive
-        summary = {"failures": 0, "skips": 0, "errors": 0, "xfailures": 0, "xpasses": 0, "tests": 0}
+        summary = {"failures": 0, "skips": 0, "errors": 0, "xfailures": 0, "xpasses": 0, "tests": 0, "tests_collected": 0}
         for result in self._results.values():
             key = self._status_to_summary(result["result"])
             if key in summary:
                 summary[key] += 1
+            # update the number of tests that actually ran
             summary["tests"] += 1
+        # store the number of tests that were collected
+        summary["tests_collected"] = getattr(self._session, "testscollected", summary["tests"])
+        # store the summary on the run
         self.run["summary"] = summary
         self.update_run()
         # Build the tarball
@@ -366,7 +372,11 @@ class IbutsuArchiver(object):
         return BLOCKER_CATEGORY_TO_CLASSIFICATION.get(category)
 
     @pytest.mark.tryfirst
-    def pytest_collection_modifyitems(self, items):
+    def pytest_collection_modifyitems(self, session, items):
+        # save the pytest session object for later use
+        self._session = session
+
+        # loop over all items and add ibutsu data
         for item in items:
             data = getattr(item, "_ibutsu", {})
             new_data = {"id": None, "data": {"metadata": {}}, "artifacts": {}}
