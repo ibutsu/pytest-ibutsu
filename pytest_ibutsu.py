@@ -221,7 +221,7 @@ class IbutsuArchiver(object):
 
     def shutdown(self):
         # Gather the summary before building the archive
-        summary = {"failures": 0, "skips": 0, "errors": 0, "xfailures": 0, "xpasses": 0, "tests": 0, "tests_collected": 0}
+        summary = {"failures": 0, "skips": 0, "errors": 0, "xfailures": 0, "xpasses": 0, "tests": 0, "collected": 0}
         for result in self._results.values():
             key = self._status_to_summary(result["result"])
             if key in summary:
@@ -229,7 +229,7 @@ class IbutsuArchiver(object):
             # update the number of tests that actually ran
             summary["tests"] += 1
         # store the number of tests that were collected
-        summary["tests_collected"] = getattr(self._session, "testscollected", summary["tests"])
+        summary["collected"] = getattr(self._session, "testscollected", summary["tests"])
         # store the summary on the run
         self.run["summary"] = summary
         self.update_run()
