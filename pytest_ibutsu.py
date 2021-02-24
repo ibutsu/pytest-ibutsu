@@ -38,7 +38,7 @@ BLOCKER_CATEGORY_TO_CLASSIFICATION = {
 }
 
 # Place a limit on the file-size we can upload for artifacts
-UPLOAD_LIMIT = 256 * 1024  # 256 KiB
+UPLOAD_LIMIT = 5 * 1024 * 1024  # 5 MiB
 
 # Maximum number of times an API call is retried
 MAX_CALL_RETRIES = 3
