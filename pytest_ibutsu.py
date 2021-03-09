@@ -14,11 +14,11 @@ from tempfile import NamedTemporaryFile
 import pytest
 from ibutsu_client import ApiClient
 from ibutsu_client import ApiException
-from ibutsu_client import ArtifactApi
+from ibutsu_client.api.artifact_api import ArtifactApi
 from ibutsu_client import Configuration
-from ibutsu_client import HealthApi
-from ibutsu_client import ResultApi
-from ibutsu_client import RunApi
+from ibutsu_client.api.health_api import HealthApi
+from ibutsu_client.api.result_api import ResultApi
+from ibutsu_client.api.run_api import RunApi
 from json import JSONEncoder
 from urllib3.exceptions import MaxRetryError
 from urllib3.exceptions import ProtocolError
@@ -145,7 +145,7 @@ class IbutsuArchiver(object):
         self.run = None
         self._temp_path = path
         self.source = source or "local"
-        self.extra_data = extra_data or {}
+        self.extra_data = extra_data or {"component": None, "env": None}
         # pytest session object, to be set by pytest_collection_modifyitems below
         self._session = None
 
@@ -221,7 +221,15 @@ class IbutsuArchiver(object):
 
     def shutdown(self):
         # Gather the summary before building the archive
-        summary = {"failures": 0, "skips": 0, "errors": 0, "xfailures": 0, "xpasses": 0, "tests": 0, "collected": 0}
+        summary = {
+            "failures": 0,
+            "skips": 0,
+            "errors": 0,
+            "xfailures": 0,
+            "xpasses": 0,
+            "tests": 0,
+            "collected": 0
+        }
         for result in self._results.values():
             key = self._status_to_summary(result["result"])
             if key in summary:
@@ -246,7 +254,8 @@ class IbutsuArchiver(object):
     def get_run_id(self):
         if not self.run:
             run = {
-                "duration": 0,
+                "duration": 0.0,
+                "component": "",
                 "summary": {
                     "failures": 0,
                     "skips": 0,
@@ -257,7 +266,7 @@ class IbutsuArchiver(object):
                 },
                 "metadata": self.extra_data,
                 "source": getattr(self, "source", "local"),
-                "start_time": datetime.utcnow(),
+                "start_time": datetime.utcnow().isoformat(),
             }
             self.run = self.add_run(run=run)
         return self.run["id"]
@@ -392,7 +401,7 @@ class IbutsuArchiver(object):
                 params = {}
         else:
             params = {}
-        start_time = datetime.utcnow()
+        start_time = datetime.utcnow().isoformat()
         fspath = item.location[0] or item.fspath.strpath
         if "site-packages/" in fspath:
             fspath = fspath[fspath.find("site-packages/") + 14 :]
@@ -402,6 +411,7 @@ class IbutsuArchiver(object):
             "params": params,
             "start_time": start_time,
             "test_id": get_test_idents(item)[0],
+            "duration": 0.0,
             "metadata": {
                 "statuses": {},
                 "run": self.run_id,
@@ -549,7 +559,7 @@ class IbutsuSender(IbutsuArchiver):
         if server_run:
             self.run = server_run.to_dict()
 
-    def update_run(self, duration=None):
+    def update_run(self, duration=0.0):
         super().update_run(duration)
         self._make_call(self.run_api.update_run, self.run["id"], run=self.run)
 
@@ -570,7 +580,8 @@ class IbutsuSender(IbutsuArchiver):
         super().upload_artifact(id, filename, data)
         file_size = os.stat(data).st_size
         if file_size < UPLOAD_LIMIT:
-            self._make_call(self.artifact_api.upload_artifact, id, filename, data)
+            file_content = open(data, 'rb')
+            self._make_call(self.artifact_api.upload_artifact, id, filename, file_content)
 
     def output_msg(self):
         with open(".last-ibutsu-run-id", "w") as f:
