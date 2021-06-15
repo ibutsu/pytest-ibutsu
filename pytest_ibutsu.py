@@ -4,22 +4,23 @@ import shutil
 import tarfile
 import time
 import uuid
-from datetime import datetime
 from datetime import date
+from datetime import datetime
 from http.client import BadStatusLine
 from http.client import RemoteDisconnected
+from json import JSONEncoder
 from tempfile import gettempdir
 from tempfile import NamedTemporaryFile
 
 import pytest
 from ibutsu_client import ApiClient
 from ibutsu_client import ApiException
-from ibutsu_client.api.artifact_api import ArtifactApi
 from ibutsu_client import Configuration
+from ibutsu_client.api.artifact_api import ArtifactApi
 from ibutsu_client.api.health_api import HealthApi
 from ibutsu_client.api.result_api import ResultApi
 from ibutsu_client.api.run_api import RunApi
-from json import JSONEncoder
+from ibutsu_client.exceptions import ApiValueError
 from urllib3.exceptions import MaxRetryError
 from urllib3.exceptions import ProtocolError
 
@@ -45,7 +46,7 @@ MAX_CALL_RETRIES = 3
 
 
 class DateTimeEncoder(JSONEncoder):
-    """ Handle datetime objects in the archiver. """
+    """Handle datetime objects in the archiver."""
 
     def default(self, obj):
         if isinstance(obj, (date, datetime)):
@@ -228,7 +229,7 @@ class IbutsuArchiver(object):
             "xfailures": 0,
             "xpasses": 0,
             "tests": 0,
-            "collected": 0
+            "collected": 0,
         }
         for result in self._results.values():
             key = self._status_to_summary(result["result"])
@@ -372,7 +373,7 @@ class IbutsuArchiver(object):
         return skip_reason
 
     def get_classification(self, reason):
-        """ Get the skip/xfail classification and category from the reason"""
+        """Get the skip/xfail classification and category from the reason"""
         category = None
         try:
             category = reason.split("category:")[1].strip()
@@ -486,7 +487,7 @@ class IbutsuArchiver(object):
             classification = self.get_classification(reason)
             if classification:
                 data["metadata"]["classification"] = classification
-        data["duration"] = sum([v for v in data["metadata"]["durations"].values()])
+        data["duration"] = sum(v for v in data["metadata"]["durations"].values())
         report._ibutsu["data"] = data
 
     def pytest_sessionfinish(self):
@@ -539,7 +540,7 @@ class IbutsuSender(IbutsuArchiver):
                     return out
                 except (RemoteDisconnected, ProtocolError, BadStatusLine):
                     retries += 1
-            raise TooManyRetriesError('Too many retries while trying to call API')
+            raise TooManyRetriesError("Too many retries while trying to call API")
         except (MaxRetryError, ApiException, TooManyRetriesError) as e:
             self._has_server_error = self._has_server_error or True
             self._server_error_tbs.append(str(e))
@@ -580,8 +581,14 @@ class IbutsuSender(IbutsuArchiver):
         super().upload_artifact(id, filename, data)
         file_size = os.stat(data).st_size
         if file_size < UPLOAD_LIMIT:
-            file_content = open(data, 'rb')
-            self._make_call(self.artifact_api.upload_artifact, id, filename, file_content)
+            with open(data, "rb") as file_content:
+                try:
+                    if not file_content.closed:
+                        self._make_call(
+                            self.artifact_api.upload_artifact, id, filename, file_content
+                        )
+                except ApiValueError:
+                    print(f"Uploading artifact '{filename}' failed as the file closed prematurely.")
 
     def output_msg(self):
         with open(".last-ibutsu-run-id", "w") as f:
