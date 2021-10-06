@@ -318,10 +318,16 @@ class IbutsuArchiver(object):
             json.dump(result, f, cls=DateTimeEncoder)
         self._results[id] = result
 
-    def upload_artifact(self, id, filename, data):
+    def upload_artifact(self, id_, filename, data, is_run=False):
+        """
+        Save an artifact to the archive.
+
+        'id_' can be either a run or result ID.
+        'is_run' should be True if it is a run ID.
+        """
         file_size = os.stat(data).st_size
         if file_size < UPLOAD_LIMIT:
-            art_path = os.path.join(self.temp_path, id)
+            art_path = os.path.join(self.temp_path, id_)
             os.makedirs(art_path, exist_ok=True)
             shutil.copyfile(data, os.path.join(art_path, filename))
         else:
@@ -331,15 +337,15 @@ class IbutsuArchiver(object):
                 f" File will not be uploaded to Ibutsu."
             )
 
-    def upload_artifact_raw(self, res_id, filename, data):
+    def upload_artifact_raw(self, id_, filename, data, is_run=False):
         file_object = NamedTemporaryFile(delete=False)
         os_file_name = file_object.name
         file_object.write(data)
         file_object.close()
-        self.upload_artifact(res_id, filename, os_file_name)
+        self.upload_artifact(id_, filename, os_file_name, is_run=is_run)
 
-    def upload_artifact_from_file(self, res_id, logged_filename, filename):
-        self.upload_artifact(res_id, logged_filename, filename)
+    def upload_artifact_from_file(self, id_, logged_filename, filename, is_run=False):
+        self.upload_artifact(id_, logged_filename, filename, is_run=is_run)
 
     def get_xfail_reason(self, data, report):
         xfail_reason = None
@@ -577,16 +583,34 @@ class IbutsuSender(IbutsuArchiver):
         self._make_call(self.result_api.update_result, id, result=result, async_req=True)
         super().update_result(id, result)
 
-    def upload_artifact(self, id, filename, data):
-        super().upload_artifact(id, filename, data)
+    def upload_artifact(self, id_, filename, data, is_run=False):
+        super().upload_artifact(id_, filename, data, is_run=is_run)
         file_size = os.stat(data).st_size
         if file_size < UPLOAD_LIMIT:
             with open(data, "rb") as file_content:
                 try:
                     if not file_content.closed:
-                        self._make_call(
-                            self.artifact_api.upload_artifact, id, filename, file_content
-                        )
+                        if is_run:
+                            # id_ is the run_id, we don't check the return_type because
+                            # artifact.to_dict() in the controller contains a None value
+                            self._make_call(
+                                self.artifact_api.upload_artifact,
+                                filename,
+                                file_content,
+                                run_id=id_,
+                                _check_return_type=False,
+                            )
+                        else:
+                            # id_ is the result_id, we don't check the return_type because
+                            # artifact.to_dict() in the controller contains a None valued
+                            self._make_call(
+                                self.artifact_api.upload_artifact,
+                                filename,
+                                file_content,
+                                result_id=id_,
+                                _check_return_type=False,
+                            )
+
                 except ApiValueError:
                     print(f"Uploading artifact '{filename}' failed as the file closed prematurely.")
 
