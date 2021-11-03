@@ -11,7 +11,13 @@ from http.client import RemoteDisconnected
 from json import JSONEncoder
 from tempfile import gettempdir
 from tempfile import NamedTemporaryFile
+from typing import MutableMapping, Type, cast
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Union
 
+import _pytest  # hack for types
 import pytest
 from ibutsu_client import ApiClient
 from ibutsu_client import ApiException
@@ -78,31 +84,38 @@ def merge_dicts(old_dict, new_dict):
             merge_dicts(value, new_dict[key])
 
 
-def parse_data_option(data_list):
-    if not data_list:
-        return {}
-    data_dict = {}
+# todo: mypy fails at nesting
+class DATA_OPTIONS(MutableMapping[str, Union["DATA_OPTIONS",  str]]):
+    @staticmethod
+    def new():
+        return cast(DATA_OPTIONS, {})
+
+def parse_data_option(data_list: List[str]) -> DATA_OPTIONS:
+    data_dict: DATA_OPTIONS = DATA_OPTIONS.new()
+
     for data_str in data_list:
         if not data_str:
             continue
         key_str, value = data_str.split("=", 1)
-        keys = key_str.split(".")
-        current_item = data_dict
-        for key in keys[:-1]:
+        (*keys, item) = key_str.split(".")
+        current_item: DATA_OPTIONS = data_dict
+        for key in keys:
             if key not in current_item:
-                current_item[key] = {}
-            current_item = current_item[key]
-        key = keys[-1]
-        current_item[key] = value
+                new = current_item[key] = DATA_OPTIONS.new()
+                current_item = new
+            else:
+                current_item = cast(DATA_OPTIONS, current_item[key])
+
+        current_item[item] = value
     return data_dict
 
 
-def get_test_idents(item):
+def get_test_idents(item: _pytest.nodes.Item):
     try:
         return item.location[2], item.location[0]
     except AttributeError:
         try:
-            return item.fspath.strpath, None
+            return item.fspath.strpath, None  # type: ignore
         except AttributeError:
             return (None, None)
 
@@ -136,8 +149,8 @@ class IbutsuArchiver:
     Save all Ibutsu results to archive
     """
 
-    _start_time = None
-    _stop_time = None
+    _start_time: Optional[float] = None
+    _stop_time: Optional[float] = None
     frontend = None
 
     def __init__(self, source=None, path=None, extra_data=None):
