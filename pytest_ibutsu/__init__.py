@@ -131,7 +131,7 @@ class TooManyRetriesError(Exception):
     pass
 
 
-class IbutsuArchiver(object):
+class IbutsuArchiver:
     """
     Save all Ibutsu results to archive
     """
@@ -244,7 +244,7 @@ class IbutsuArchiver(object):
         self.update_run()
         # Build the tarball
         self.tar_file = os.path.join(os.path.abspath("."), f"{self.run_id}.tar.gz")
-        print("Creating archive {}...".format(os.path.basename(self.tar_file)))
+        print(f"Creating archive {os.path.basename(self.tar_file)}...")
         with tarfile.open(self.tar_file, "w:gz") as tar:
             tar.add(self.temp_path, self.run_id)
 
@@ -718,7 +718,7 @@ def pytest_configure(config):
         ibutsu_data.update({"project": ibutsu_project})
     if ibutsu_server != "archive":
         try:
-            print("Ibutsu server: {}".format(ibutsu_server))
+            print(f"Ibutsu server: {ibutsu_server}")
             if ibutsu_server.endswith("/"):
                 ibutsu_server = ibutsu_server[:-1]
             if not ibutsu_server.endswith("/api"):
