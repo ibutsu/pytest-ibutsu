@@ -512,13 +512,13 @@ class IbutsuSender(IbutsuArchiver):
     An enhanced Ibutsu plugin that also sends Ibutsu results to an Ibutsu server
     """
 
-    def __init__(self, server_url, source=None, path=None, extra_data=None):
+    def __init__(self, server_url, source=None, path=None, extra_data=None, token=None):
         self.server_url = server_url
         self._has_server_error = False
         self._server_error_tbs = []
         self._sender_cache = []
 
-        config = Configuration()
+        config = Configuration(access_token=token)
         config.host = self.server_url
         # Only set the SSL CA cert if one of the environment variables is set
         for env_var in CA_BUNDLE_ENVS:
@@ -643,6 +643,7 @@ class IbutsuSender(IbutsuArchiver):
 
 def pytest_addoption(parser):
     parser.addini("ibutsu_server", help="The Ibutsu server to connect to")
+    parser.addini("ibutsu_token", help="The JWT token to authenticate with the server")
     parser.addini("ibutsu_source", help="The source of the test run")
     parser.addini("ibutsu_metadata", help="Extra metadata to include with the test results")
     parser.addini("ibutsu_project", help="Project ID or name")
@@ -654,6 +655,14 @@ def pytest_addoption(parser):
         metavar="URL",
         default=None,
         help="URL for the Ibutsu server",
+    )
+    group.addoption(
+        "--ibutsu-token",
+        dest="ibutsu_token",
+        action="store",
+        metavar="TOKEN",
+        default=None,
+        help="The JWT token to authenticate with the server",
     )
     group.addoption(
         "--ibutsu-source",
@@ -695,6 +704,9 @@ def pytest_configure(config):
         ibutsu_server = config.getini("ibutsu_server")
     if not ibutsu_server:
         return
+    ibutsu_token = config.getoption("ibutsu_token", None)
+    if config.getini("ibutsu_token"):
+        ibutsu_token = config.getini("ibutsu_token")
     ibutsu_source = config.getoption("ibutsu_source", None)
     if config.getini("ibutsu_source"):
         ibutsu_source = config.getini("ibutsu_source")
@@ -711,7 +723,8 @@ def pytest_configure(config):
                 ibutsu_server = ibutsu_server[:-1]
             if not ibutsu_server.endswith("/api"):
                 ibutsu_server += "/api"
-            ibutsu = IbutsuSender(ibutsu_server, ibutsu_source, extra_data=ibutsu_data)
+            ibutsu = IbutsuSender(ibutsu_server, ibutsu_source, extra_data=ibutsu_data,
+                                  token=ibutsu_token)
             ibutsu.frontend = ibutsu.health_api.get_health_info().frontend
         except MaxRetryError:
             print("Connection failure in health check - switching to archiver")
