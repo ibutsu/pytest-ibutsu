@@ -141,7 +141,7 @@ class IbutsuArchiver(object):
     frontend = None
 
     def __init__(self, source=None, path=None, extra_data=None):
-        self._results = {}
+        self.results = {}
         self._run_id = None
         self.run = None
         self._temp_path = path
@@ -231,7 +231,7 @@ class IbutsuArchiver(object):
             "tests": 0,
             "collected": 0,
         }
-        for result in self._results.values():
+        for result in self.results.values():
             key = self._status_to_summary(result["result"])
             if key in summary:
                 summary[key] += 1
@@ -305,7 +305,7 @@ class IbutsuArchiver(object):
         result["metadata"].update(self.extra_data)
         with open(os.path.join(art_path, "result.json"), "w") as f:
             json.dump(result, f, cls=DateTimeEncoder)
-        self._results[result_id] = result
+        self.results[result_id] = result
         return result
 
     def update_result(self, id, result):
@@ -316,7 +316,7 @@ class IbutsuArchiver(object):
         result["metadata"].update(self.extra_data)
         with open(os.path.join(art_path, "result.json"), "w") as f:
             json.dump(result, f, cls=DateTimeEncoder)
-        self._results[id] = result
+        self.results[id] = result
 
     def upload_artifact(self, id_, filename, data, is_run=False):
         """
@@ -759,6 +759,13 @@ def pytest_unconfigure(config):
     if ibutsu_instance:
         del config._ibutsu
         config.pluginmanager.unregister(ibutsu_instance)
+        config.hook.pytest_ibutsu_before_shutdown(config=config, ibutsu=ibutsu_instance)
         ibutsu_instance.shutdown()
         if ibutsu_instance.run_id:
             ibutsu_instance.output_msg()
+
+
+def pytest_addhooks(pluginmanager):
+    import newhooks
+
+    pluginmanager.add_hookspecs(newhooks)

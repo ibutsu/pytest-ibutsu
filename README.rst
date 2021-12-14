@@ -71,3 +71,9 @@ Usage
 
 With this plugin installed, and the configuration set up, your test results will automatically be
 sent to the Ibutsu server.
+
+
+Hooks
+-----
+
+The plugin has its own hooks. They are defined in ``newhooks.py``.
