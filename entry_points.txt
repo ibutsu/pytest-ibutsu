@@ -1,2 +1,2 @@
 [pytest11]
-ibutsu = pytest_ibutsu
+ibutsu = pytest_ibutsu.pytest_ibutsu
