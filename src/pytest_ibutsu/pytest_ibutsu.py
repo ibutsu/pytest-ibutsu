@@ -766,6 +766,6 @@ def pytest_unconfigure(config):
 
 
 def pytest_addhooks(pluginmanager):
-    import newhooks
+    from . import newhooks
 
     pluginmanager.add_hookspecs(newhooks)
