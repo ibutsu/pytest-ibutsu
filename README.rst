@@ -26,6 +26,15 @@ To push your results to the Ibutsu server, use the ``--ibutsu`` option with the 
 
     pytest --ibutsu http://ibutsu/
 
+Authentication
+--------------
+
+To authenticate against your Ibutsu server, use the ``--ibutsu-token`` option with a token from your
+Ibutsu server. Go to your profile page, select tokens, and generate a token there. Copy and paste
+the JWT token generated into this option::
+
+    pytest --ibutsu http://ibutsu/ --ibutsu-token eyJhbGci.......CA1opEQ
+
 More Options
 ------------
 
