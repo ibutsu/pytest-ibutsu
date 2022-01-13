@@ -723,8 +723,9 @@ def pytest_configure(config):
                 ibutsu_server = ibutsu_server[:-1]
             if not ibutsu_server.endswith("/api"):
                 ibutsu_server += "/api"
-            ibutsu = IbutsuSender(ibutsu_server, ibutsu_source, extra_data=ibutsu_data,
-                                  token=ibutsu_token)
+            ibutsu = IbutsuSender(
+                ibutsu_server, ibutsu_source, extra_data=ibutsu_data, token=ibutsu_token
+            )
             ibutsu.frontend = ibutsu.health_api.get_health_info().frontend
         except MaxRetryError:
             print("Connection failure in health check - switching to archiver")
@@ -737,6 +738,23 @@ def pytest_configure(config):
     if config.pluginmanager.has_plugin("xdist"):
         if hasattr(config, "workerinput") and config.workerinput.get("run_id"):
             ibutsu.set_run_id(config.workerinput["run_id"])
+            run = {
+                "id": ibutsu.run_id,
+                "duration": 0.0,
+                "component": "",
+                "summary": {
+                    "failures": 0,
+                    "skips": 0,
+                    "errors": 0,
+                    "xfailures": 0,
+                    "xpasses": 0,
+                    "tests": 0,
+                },
+                "metadata": ibutsu.extra_data,
+                "source": getattr(ibutsu, "source", "local"),
+                "start_time": datetime.utcnow().isoformat(),
+            }
+            ibutsu.run = ibutsu.add_run(run=run)
         else:
             ibutsu.set_run_id(ibutsu.get_run_id())
     config._ibutsu = ibutsu
