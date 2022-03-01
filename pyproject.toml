@@ -1,0 +1,14 @@
+[build-system]
+requires=[
+    "setuptools>45",
+    "setuptools_scm>=6.3.2",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+
+[tool.mypy]
+
+[[tool.mypy.overrides]]
+module = ["ibutsu_client.*", "urllib3.exceptions"]
+ignore_missing_imports = true
