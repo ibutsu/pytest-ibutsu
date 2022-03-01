@@ -454,7 +454,16 @@ class IbutsuSender(IbutsuArchiver):
     An enhanced Ibutsu plugin that also sends Ibutsu results to an Ibutsu server
     """
 
-
+    def __init__(
+        self,
+        *,
+        source: str = "local",
+        temp_path: str,
+        extra_data=None,
+        config=None,
+        server_url=None,
+        token=None,
+    ):
         self.server_url = server_url
         self._has_server_error = False
         self._server_error_tbs = []
@@ -672,10 +681,11 @@ def pytest_configure(config):
             if not ibutsu_server.endswith("/api"):
                 ibutsu_server += "/api"
             ibutsu = IbutsuSender(
-                ibutsu_server, ibutsu_source, 
+                ibutsu_server,
+                ibutsu_source,
                 temp_path=tmp_path,
                 extra_data=ibutsu_data,
-                 token=ibutsu_token,
+                token=ibutsu_token,
             )
             ibutsu.frontend = ibutsu.health_api.get_health_info().frontend
         except MaxRetryError:
