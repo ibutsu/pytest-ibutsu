@@ -1,4 +1,5 @@
 import json
+from multiprocessing.pool import ApplyResult
 import os
 import shutil
 import tarfile
@@ -8,7 +9,7 @@ from datetime import datetime
 from http.client import BadStatusLine
 from http.client import RemoteDisconnected
 from tempfile import NamedTemporaryFile
-from typing import Dict
+from typing import Dict, List
 from typing import Optional
 from typing import Tuple
 from typing import TypedDict
@@ -94,7 +95,7 @@ class IbutsuArchiver:
         self.config = config
 
         self._results: ResultsDict = {"duration": None, "component": None}
-        self._run_id = None
+        self._run_id: Optional[str] = None
         self.run = None
         self.temp_path = temp_path
         self.source = source
@@ -466,8 +467,8 @@ class IbutsuSender(IbutsuArchiver):
     ):
         self.server_url = server_url
         self._has_server_error = False
-        self._server_error_tbs = []
-        self._sender_cache = []
+        self._server_error_tbs : List[str] = []
+        self._sender_cache: List[ApplyResult] = []
 
         config = Configuration(access_token=token)
         config.host = self.server_url
