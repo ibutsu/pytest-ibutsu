@@ -183,12 +183,13 @@ class IbutsuArchiver:
         self.run["summary"] = summary
         self.update_run()
         # Build the tarball
-        self.tar_file = os.path.join(
-            os.path.abspath("."), self.archive_name.format(run_id=self.run_id)
-        )
-        print(f"Creating archive {os.path.basename(self.archive_name)}...")
-        with tarfile.open(self.tar_file, "w:gz") as tar:
-            tar.add(self.temp_path, self.run_id)
+        if self.archive_name is not None:
+            self.tar_file = os.path.join(
+                os.path.abspath("."), self.archive_name.format(run_id=self.run_id)
+            )
+            print(f"Creating archive {os.path.basename(self.archive_name)}...")
+            with tarfile.open(self.tar_file, "w:gz") as tar:
+                tar.add(self.temp_path, self.run_id)
         self.server.shutdown()
 
     def output_msg(self):
@@ -514,7 +515,7 @@ class IbutsuApiServer:
 
     @property
     def frontend(self):
-        self.health_api.get_health_info().frontend
+        return self.health_api.get_health_info().frontend
 
     def _make_call(self, api_method, *args, **kwargs):
         for res in self._sender_cache:
@@ -551,7 +552,7 @@ class IbutsuApiServer:
             return server_run.to_dict()
 
     def refresh_run(self, run_id: str) -> Optional[dict]:
-        fresh_run = self._make_call(self.run_api.get_run, self.run_id)
+        fresh_run = self._make_call(self.run_api.get_run, run_id)
         if fresh_run:
             return fresh_run.to_dict()
 
