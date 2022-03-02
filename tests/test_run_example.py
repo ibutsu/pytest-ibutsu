@@ -1,10 +1,6 @@
 import pytest
 
 
-def given_url(config):
-    return "--ibutsu=" + config.getoption("--test-ibutsu")
-
-
 def test_run_archive(pytester: pytest.Pytester):
     pytester.copy_example("tests/example_test_to_report_to_ibutsu.py")
     pytester.runpytest(
