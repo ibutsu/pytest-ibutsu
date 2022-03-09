@@ -1,6 +1,3 @@
-from datetime import date
-from datetime import datetime
-from json import JSONEncoder
 from typing import cast
 from typing import List
 from typing import MutableMapping
@@ -72,11 +69,3 @@ def get_test_idents(item: _pytest.nodes.Item):
 
 def get_name(obj):
     return getattr(obj, "_param_name", None) or getattr(obj, "name", None) or str(obj)
-
-
-class DateTimeEncoder(JSONEncoder):
-    """Handle datetime objects in the archiver."""
-
-    def default(self, obj):
-        if isinstance(obj, (date, datetime)):
-            return obj.isoformat()

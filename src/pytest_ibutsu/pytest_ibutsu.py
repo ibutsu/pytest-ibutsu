@@ -31,7 +31,6 @@ from typing_extensions import Final
 from urllib3.exceptions import MaxRetryError
 from urllib3.exceptions import ProtocolError
 
-from ._data_processing import DateTimeEncoder
 from ._data_processing import get_name
 from ._data_processing import get_test_idents
 from ._data_processing import merge_dicts
@@ -71,6 +70,10 @@ def overall_test_status(statuses: Dict[str, Tuple[str, bool]]) -> str:
             return "skipped"
         elif when == "call" and status[0] == "failed":
             return "failed"
+        elif status[0] == "manual":
+            return "manual"
+        elif status[0] == "blocked":
+            return "blocked"
     return "passed"
 
 
@@ -132,7 +135,7 @@ class IbutsuArchiver:
             "xfailed": "xfailures",
             "xpassed": "xpasses",
             "tests": "tests",
-        }.get(status)
+        }.get(status, status)
 
     def _save_run(self, run):
         if not run.get("metadata"):
@@ -140,7 +143,7 @@ class IbutsuArchiver:
         run["metadata"].update(self.extra_data)
 
         with self.temp_path.joinpath("run.json").open("w") as f:
-            json.dump(run, f, cls=DateTimeEncoder)
+            json.dump(run, f)
 
     @property
     def duration(self):
@@ -221,7 +224,7 @@ class IbutsuArchiver:
                     "tests": 0,
                 },
                 "metadata": self.extra_data,
-                "source": getattr(self, "source", "local"),
+                "source": self.source,
                 "start_time": datetime.utcnow().isoformat(),
             }
             self.run = self.add_run(run=run)
@@ -233,8 +236,7 @@ class IbutsuArchiver:
 
     def add_run(self, run):
         run = self.server.add_run(run)
-        if not run.get("id"):
-            run["id"] = str(uuid.uuid4())
+        assert run.get("id") is not None
         if not run.get("source"):
             run["source"] = self.source
         self._save_run(run)
@@ -261,11 +263,9 @@ class IbutsuArchiver:
         result["metadata"].update(self.extra_data)
         server_result = self.server.add_result(result)
         result.update(server_result)
-        result_id = result.get("id")
-        if not result_id:
-            result_id = str(uuid.uuid4())
-            result["id"] = result_id
-        self._write_result(result_id, result)
+
+        self._write_result(result["id"], result)
+        assert result["id"]
         return result
 
     def update_result(self, id, result):
@@ -273,14 +273,14 @@ class IbutsuArchiver:
         self._write_result(id, result)
 
     def _write_result(self, id, result):
-
+        assert result["id"] == id
         art_path = os.path.join(self.temp_path, id)
         os.makedirs(art_path, exist_ok=True)
         if not result.get("metadata"):
             result["metadata"] = {}
         result["metadata"].update(self.extra_data)
         with open(os.path.join(art_path, "result.json"), "w") as f:
-            json.dump(result, f, cls=DateTimeEncoder)
+            json.dump(result, f)
         self.results[id] = result
 
     def upload_artifact(self, id_, filename, data, is_run=False):
@@ -376,9 +376,8 @@ class IbutsuArchiver:
         else:
             params = {}
         start_time = datetime.utcnow().isoformat()
-        fspath = item.location[0] or item.fspath.strpath
-        if "site-packages/" in fspath:
-            fspath = fspath[fspath.find("site-packages/") + 14 :]
+        fspath: str = item.location[0] or item.fspath.strpath
+        site_free_path = fspath.split("site-packages/", 1)[-1]
         data = {
             "result": "failed",
             "source": getattr(self, "source", "local"),
@@ -391,7 +390,7 @@ class IbutsuArchiver:
                 "report_teststatuses": {},
                 "run": self.run_id,
                 "durations": {},
-                "fspath": fspath,
+                "fspath": site_free_path,
                 "markers": [
                     {"name": m.name, "args": m.args, "kwargs": m.kwargs}
                     for m in item.iter_markers()
@@ -467,10 +466,15 @@ class IbutsuArchiver:
         self.update_run(duration=self.duration)
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_makereport(self, item, call):
+    def pytest_runtest_makereport(self, item: pytest.Item, call: pytest.CallInfo):
         outcome = yield
         res = outcome.get_result()  # will raise if outcome was exception
         res._ibutsu = item._ibutsu
+        categories = item._ibutsu["data"]["metadata"].setdefault("pytest-category", {})
+
+        categories[call.when] = item.config.hook.pytest_report_teststatus(
+            report=res, config=item.config
+        )[0]
 
     @property
     def run_id(self) -> Optional[str]:
@@ -548,8 +552,8 @@ class IbutsuApiServer:
 
     def add_run(self, run: dict) -> Optional[dict]:
         server_run = self._make_call(self.run_api.add_run, run=run)
-        if server_run:
-            return server_run.to_dict()
+        assert server_run
+        return server_run.to_dict()
 
     def refresh_run(self, run_id: str) -> Optional[dict]:
         fresh_run = self._make_call(self.run_api.get_run, run_id)
@@ -606,13 +610,19 @@ class NoServer:
         pass
 
     def add_run(self, run):
+        assert "id" not in run
+        run["id"] = str(uuid.uuid4())
         return run
 
     def update_run(self, run):
         return run
 
     def add_result(self, result):
-        return {}
+        result_id = result.get("id")
+        if not result_id:
+            result_id = str(uuid.uuid4())
+            result["id"] = result_id
+        return result
 
     def update_result(self, id, result):
         return result
@@ -716,8 +726,18 @@ def get_server(server_url: str, token: str | None) -> IbutsuApiServer | None:
         return server
     except MaxRetryError:
         print("Connection failure in health check")
-    except ApiException:
-        print("Error in call to Ibutsu API")
+    except ApiException as e:
+        if e.status == 401:
+            print("authorization failed")
+
+        else:
+            print("Error", e.status, "in call to Ibutsu API")
+        print(server_url)
+        print(e.args)
+        print(e.headers)
+        print(e.body)
+        raise
+    server.shutdown()
     return None
 
 
@@ -738,6 +758,11 @@ def pytest_configure(config: pytest.Config) -> None:
 
     if not ibutsu_server:
         server = NoServer()
+    elif not ibutsu_project:
+        print("project missing, swittching to no server")
+        server = NoServer()
+        if ibutsu_archive is None:
+            ibutsu_archive = "ibutsu-{run_id}.tar.gz"
     else:
         assert ibutsu_server is not None
         server = get_server(ibutsu_server, ibutsu_token)
