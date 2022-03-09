@@ -27,10 +27,10 @@ from ibutsu_client.api.health_api import HealthApi
 from ibutsu_client.api.result_api import ResultApi
 from ibutsu_client.api.run_api import RunApi
 from ibutsu_client.exceptions import ApiValueError
-from typing_extensions import Final
 from urllib3.exceptions import MaxRetryError
 from urllib3.exceptions import ProtocolError
 
+from ._data_processing import DATA_OPTIONS
 from ._data_processing import get_name
 from ._data_processing import get_test_idents
 from ._data_processing import merge_dicts
@@ -114,10 +114,12 @@ class IbutsuArchiver:
     """
 
     server: "IbutsuApiServer | NoServer"
-    temp_path: Final[Path]
-    source: Final[str]
-    _results: ResultsDict = field(default_factory=lambda: {"duration": None, "component": None})
-    extra_data: dict = field(default_factory=dict)
+    temp_path: Path
+    source: str
+    _results: ResultsDict = field(
+        default_factory=lambda: ResultsDict(duration=None, component=None)
+    )
+    extra_data: DATA_OPTIONS = field(default_factory=DATA_OPTIONS.new)
     archive_name: Optional[str] = None
     _start_time: Optional[float] = None
     _stop_time: Optional[float] = None
@@ -235,10 +237,10 @@ class IbutsuArchiver:
         self.refresh_run()
 
     def add_run(self, run):
-        run = self.server.add_run(run)
-        assert run.get("id") is not None
         if not run.get("source"):
             run["source"] = self.source
+        run = self.server.add_run(run)
+        assert run.get("id") is not None
         self._save_run(run)
 
         return run
@@ -469,8 +471,8 @@ class IbutsuArchiver:
     def pytest_runtest_makereport(self, item: pytest.Item, call: pytest.CallInfo):
         outcome = yield
         res = outcome.get_result()  # will raise if outcome was exception
-        res._ibutsu = item._ibutsu
-        categories = item._ibutsu["data"]["metadata"].setdefault("pytest-category", {})
+        res._ibutsu = item._ibutsu  # type: ignore
+        categories = res._ibutsu["data"]["metadata"].setdefault("pytest-category", {})
 
         categories[call.when] = item.config.hook.pytest_report_teststatus(
             report=res, config=item.config
@@ -480,6 +482,8 @@ class IbutsuArchiver:
     def run_id(self) -> Optional[str]:
         if self.run:
             return self.run.get("id")
+        else:
+            return None
 
 
 @dataclass
@@ -559,6 +563,8 @@ class IbutsuApiServer:
         fresh_run = self._make_call(self.run_api.get_run, run_id)
         if fresh_run:
             return fresh_run.to_dict()
+        else:
+            return None
 
     def update_run(self, run):
         self._make_call(self.run_api.update_run, run["id"], run=run)
@@ -701,7 +707,7 @@ def pytest_configure_node(node):
     node.workerinput["ibutsu:run_dir"] = node.config._ibutsu.tmp_path
 
 
-def _ini_or_option(config: pytest.Config, key: str) -> object:
+def _ini_or_option(config: pytest.Config, key: str) -> Optional[str]:
     option = config.getoption(key, None)
     ini = config.getini(key)
     return ini or option
@@ -755,7 +761,7 @@ def pytest_configure(config: pytest.Config) -> None:
     ibutsu_project = _ini_or_option(config, "ibutsu_project")
     if ibutsu_project:
         ibutsu_data.update({"project": ibutsu_project})
-
+    server: "IbutsuApiServer|NoServer"
     if not ibutsu_server:
         server = NoServer()
     elif not ibutsu_project:
@@ -765,12 +771,14 @@ def pytest_configure(config: pytest.Config) -> None:
             ibutsu_archive = "ibutsu-{run_id}.tar.gz"
     else:
         assert ibutsu_server is not None
-        server = get_server(ibutsu_server, ibutsu_token)
-        if server is None:
+        maybe_server = get_server(ibutsu_server, ibutsu_token)
+        if maybe_server is None:
             print("switching to archiver")
             server = NoServer()
             if ibutsu_archive is None:
                 ibutsu_archive = "ibutsu-{run_id}.tar.gz"
+        else:
+            server = maybe_server
 
     ibutsu = IbutsuArchiver(
         server=server,
