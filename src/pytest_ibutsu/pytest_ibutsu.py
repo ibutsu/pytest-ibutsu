@@ -611,8 +611,10 @@ def pytest_configure(config: pytest.Config) -> None:
     ibutsu.get_run_id()
 
     if config.pluginmanager.has_plugin("xdist"):
-        if hasattr(config, "workerinput") and config.workerinput.get("run_id"):
-            ibutsu.set_run_id(config.workerinput["run_id"])
+        workerinput: dict | None = getattr(config, "workerinput", None)
+
+        if workerinput is not None and workerinput.get("run_id"):
+            ibutsu.set_run_id(workerinput["run_id"])
             run = {
                 "id": ibutsu.run_id,
                 "duration": 0.0,
@@ -632,16 +634,16 @@ def pytest_configure(config: pytest.Config) -> None:
             ibutsu.run = ibutsu.add_run(run=run)
         else:
             ibutsu.set_run_id(ibutsu.get_run_id())
-    config._ibutsu = ibutsu
+    setattr(config, "_ibutsu", ibutsu)
 
     config.pluginmanager.register(ibutsu, name="ibutsu:sender")
 
 
 def pytest_collection_finish(session: pytest.Session):
-    if not hasattr(session.config, "_ibutsu"):
+    ibutsu: IbutsuArchiver | None = getattr(session.config, "_ibutsu", None)
+    if ibutsu is None:
         # If this plugin is not active
         return
-    ibutsu = session.config._ibutsu
     if not session.config.pluginmanager.has_plugin("xdist"):
         ibutsu.set_run_id(ibutsu.get_run_id())
     ibutsu.start_timer()
