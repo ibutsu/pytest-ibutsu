@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import pytest
 
 
@@ -28,3 +27,14 @@ def test_pass():
 
 def test_fail():
     pytest.fail("I don't like tests that pass")
+
+
+@pytest.mark.manual
+def test_manual():
+    wont_break  # NOQA
+
+
+def test_blocked_exception():
+    import pytest_external_blockers
+
+    pytest_external_blockers.block("just a test")

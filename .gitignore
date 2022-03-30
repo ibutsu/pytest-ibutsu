@@ -62,3 +62,7 @@ target/
 
 #Ipython Notebook
 .ipynb_checkpoints
+
+# own files
+.last-ibutsu-run-id
+.last-ibutsu-run-url
