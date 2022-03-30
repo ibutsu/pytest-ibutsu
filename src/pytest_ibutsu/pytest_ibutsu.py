@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import os
 import shutil
@@ -8,9 +10,6 @@ from dataclasses import field
 from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Dict
-from typing import Optional
-from typing import Tuple
 from typing import TypedDict
 
 import pytest
@@ -41,37 +40,40 @@ BLOCKER_CATEGORY_TO_CLASSIFICATION = {
 UPLOAD_LIMIT = 5 * 1024 * 1024  # 5 MiB
 
 
-def overall_test_status(statuses: Dict[str, Tuple[str, bool]]) -> str:
+def overall_test_status(statuses: dict[str, tuple[str, bool]]) -> str:
+    """ """
+    # todo: let the pytest teststatus hook return the cases for whens
     # Handle some logic for when to count certain tests as which state
-    for when, status in statuses.items():
-        if (when == "call" or when == "setup") and status[1] and status[0] == "skipped":
+    for when, (outcome, wasxfail) in statuses.items():
+        if when in ("call", "setup") and wasxfail and outcome == "skipped":
             return "xfailed"
-        elif when == "call" and status[1] and status[0] == "passed":
+        elif when == "call" and wasxfail and outcome == "passed":
             return "xpassed"
-        elif (when == "setup" or when == "teardown") and status[0] == "failed":
+        elif when in ("setup", "teardown") and outcome == "failed":
             return "error"
-        elif status[0] == "skipped":
+        elif outcome == "skipped":
             return "skipped"
-        elif when == "call" and status[0] == "failed":
+        elif when == "call" and outcome == "failed":
             return "failed"
-        elif status[0] == "manual":
+        elif outcome == "manual":
             return "manual"
-        elif status[0] == "blocked":
+        elif outcome == "blocked":
             return "blocked"
     return "passed"
 
 
 class ResultsDict(TypedDict):
-    duration: Optional[float]
-    component: Optional[str]
+    duration: float | None
+    component: str | None
 
 
-def update_extra_data_from_env(extra_data: dict):
+def update_extra_data_from_env(extra_data: dict[str, str | dict | None]):
     extra_data = {"component": None, "env": None, **extra_data}
 
     # Set an env var ID
-    if os.environ.get("IBUTSU_ENV_ID"):
-        extra_data.update(env_id=os.environ.get("IBUTSU_ENV_ID"))
+    env_id: str = os.environ.get("IBUTSU_ENV_ID", "")
+    if env_id:
+        extra_data.update(env_id=env_id)
     # Auto-detect running in Jenkins and add to the metadata
     if os.environ.get("JOB_NAME") and os.environ.get("BUILD_NUMBER"):
         extra_data.update(
@@ -87,26 +89,51 @@ def update_extra_data_from_env(extra_data: dict):
     return extra_data
 
 
+@dataclass(order=False, eq=False, unsafe_hash=True)
+class TimeTimer:
+    started_at: float | None = None
+    stopped_at: float | None = None
+
+    def start(self):
+        assert self.started_at is None
+        self.started_at = time.time()
+
+    def stop(self):
+        assert self.started_at is not None
+        assert self.stopped_at is None
+        self.stopped_at = time.time()
+
+    @property
+    def duration(self) -> float:
+
+        if self.started_at is not None:
+            if self.stopped_at is not None:
+                return self.stopped_at - self.started_at
+            else:
+                return time.time() - self.started_at
+        else:
+            return 0
+
+
 @dataclass(repr=False, order=False, eq=False)
 class IbutsuArchiver:
     """
     Save all Ibutsu results to archive
     """
 
-    server: "IbutsuApiServer | NoServer"
+    server: IbutsuApiServer | NoServer
     temp_path: Path
     source: str
     _results: ResultsDict = field(
         default_factory=lambda: ResultsDict(duration=None, component=None)
     )
     extra_data: DATA_OPTIONS = field(default_factory=DATA_OPTIONS.new)
-    archive_name: Optional[str] = None
-    _start_time: Optional[float] = None
-    _stop_time: Optional[float] = None
-    frontend: Optional[str] = None
+    archive_name: str | None = None
+    _timer: TimeTimer = field(default_factory=TimeTimer)
+    frontend: str | None = None
     _session = None
 
-    run: Optional[dict] = None
+    run: dict | None = None
     results: dict = field(default_factory=dict)
 
     def _status_to_summary(self, status):
@@ -128,21 +155,14 @@ class IbutsuArchiver:
             json.dump(run, f)
 
     @property
-    def duration(self):
-        if self._start_time and self._stop_time:
-            return self._stop_time - self._start_time
-        elif self._start_time:
-            return time.time() - self._start_time
-        else:
-            return 0
+    def duration(self) -> float:
+        return self._timer.duration
 
     def start_timer(self):
-        if not self._start_time:
-            self._start_time = time.time()
+        self._timer.start()
 
     def stop_timer(self):
-        if not self._stop_time:
-            self._stop_time = time.time()
+        self.timer.stop()
 
     def shutdown(self):
         # Gather the summary before building the archive
@@ -179,7 +199,8 @@ class IbutsuArchiver:
 
     def output_msg(self):
         with open(".last-ibutsu-run-id", "w") as f:
-            f.write(self.run_id)
+            if self.run_id is not None:
+                f.write(self.run_id)
         url = f"{self.server.frontend}/runs/{self.run_id}"
         with open(".last-ibutsu-run-url", "w") as f:
             f.write(url)
@@ -232,7 +253,7 @@ class IbutsuArchiver:
             if server_run:
                 self.run = server_run
 
-    def update_run(self, duration: Optional[float] = None):
+    def update_run(self, duration: float | None = None):
         assert self.run is not None
         if duration is not None:
             self.run["duration"] = duration
@@ -422,7 +443,7 @@ class IbutsuArchiver:
 
         data = report._ibutsu["data"]
         data["metadata"]["user_properties"] = {key: value for key, value in report.user_properties}
-        data["metadata"]["statuses"][report.when] = (report.outcome, xfail)
+        data["metadata"]["statuses"][report.when] = report.outcome, xfail
         data["metadata"]["report_teststatuses"][report.when] = None
         data["metadata"]["durations"][report.when] = report.duration
         data["result"] = overall_test_status(data["metadata"]["statuses"])
@@ -459,7 +480,7 @@ class IbutsuArchiver:
         )[0]
 
     @property
-    def run_id(self) -> Optional[str]:
+    def run_id(self) -> str | None:
         if self.run:
             return self.run.get("id")
         else:
@@ -533,7 +554,7 @@ def pytest_configure_node(node):
     node.workerinput["ibutsu:run_dir"] = node.config._ibutsu.tmp_path
 
 
-def _ini_or_option(config: pytest.Config, key: str) -> Optional[str]:
+def _ini_or_option(config: pytest.Config, key: str) -> str | None:
     option = config.getoption(key, None)
     ini = config.getini(key)
     return ini or option
@@ -548,7 +569,7 @@ def _mk_ibutsu_tmpdir(config: pytest.Config) -> Path:
 @pytest.hookimpl(trylast=True)
 def pytest_configure(config: pytest.Config) -> None:
 
-    ibutsu_server: Optional[str] = _ini_or_option(config, "ibutsu_server")
+    ibutsu_server: str | None = _ini_or_option(config, "ibutsu_server")
     ibutsu_archive = _ini_or_option(config, "ibutsu_archive")
 
     tmp_path = _mk_ibutsu_tmpdir(config)
@@ -559,7 +580,7 @@ def pytest_configure(config: pytest.Config) -> None:
     ibutsu_project = _ini_or_option(config, "ibutsu_project")
     if ibutsu_project:
         ibutsu_data.update({"project": ibutsu_project})
-    server: "IbutsuApiServer|NoServer"
+    server: IbutsuApiServer | NoServer
     if not ibutsu_server:
         server = NoServer()
     elif not ibutsu_project:
