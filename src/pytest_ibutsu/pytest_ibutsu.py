@@ -1,33 +1,31 @@
+from __future__ import annotations
+
 import json
 import os
 import shutil
 import tarfile
 import time
-import uuid
-from datetime import date
+from dataclasses import dataclass
+from dataclasses import field
 from datetime import datetime
-from http.client import BadStatusLine
-from http.client import RemoteDisconnected
-from json import JSONEncoder
-from tempfile import gettempdir
+from pathlib import Path
 from tempfile import NamedTemporaryFile
+from typing import TypedDict
 
 import pytest
-from ibutsu_client import ApiClient
-from ibutsu_client import ApiException
-from ibutsu_client import Configuration
-from ibutsu_client.api.artifact_api import ArtifactApi
-from ibutsu_client.api.health_api import HealthApi
-from ibutsu_client.api.result_api import ResultApi
-from ibutsu_client.api.run_api import RunApi
-from ibutsu_client.exceptions import ApiValueError
-from urllib3.exceptions import MaxRetryError
-from urllib3.exceptions import ProtocolError
 
+from ._data_processing import DATA_OPTIONS
+from ._data_processing import get_name
+from ._data_processing import get_test_idents
+from ._data_processing import merge_dicts
+from ._data_processing import parse_data_option
+from ._data_processing import safe_string
+from ._servers import get_server
+from ._servers import IbutsuApiServer
+from ._servers import NoServer
 
 # A list of markers that can be filtered out
 FILTERED_MARKERS = ["parametrize"]
-CA_BUNDLE_ENVS = ["REQUESTS_CA_BUNDLE", "IBUTSU_CA_BUNDLE"]
 
 # Convert the blocker category into an Ibutsu Classification
 BLOCKER_CATEGORY_TO_CLASSIFICATION = {
@@ -41,132 +39,102 @@ BLOCKER_CATEGORY_TO_CLASSIFICATION = {
 # Place a limit on the file-size we can upload for artifacts
 UPLOAD_LIMIT = 5 * 1024 * 1024  # 5 MiB
 
-# Maximum number of times an API call is retried
-MAX_CALL_RETRIES = 3
 
-
-class DateTimeEncoder(JSONEncoder):
-    """Handle datetime objects in the archiver."""
-
-    def default(self, obj):
-        if isinstance(obj, (date, datetime)):
-            return obj.isoformat()
-
-
-def safe_string(o):
-    """This will make string out of ANYTHING without having to worry about the stupid Unicode errors
-
-    This function tries to make str/unicode out of ``o`` unless it already is one of those and then
-    it processes it so in the end there is a harmless ascii string.
-
-    Args:
-        o: Anything.
-    """
-    if not isinstance(o, str):
-        o = str(o)
-    if isinstance(o, bytes):
-        o = o.decode("utf-8", "ignore")
-    o = o.encode("ascii", "xmlcharrefreplace").decode("ascii")
-    return o
-
-
-def merge_dicts(old_dict, new_dict):
-    for key, value in old_dict.items():
-        if key not in new_dict:
-            new_dict[key] = value
-        elif isinstance(value, dict):
-            merge_dicts(value, new_dict[key])
-
-
-def parse_data_option(data_list):
-    if not data_list:
-        return {}
-    data_dict = {}
-    for data_str in data_list:
-        if not data_str:
-            continue
-        key_str, value = data_str.split("=", 1)
-        keys = key_str.split(".")
-        current_item = data_dict
-        for key in keys[:-1]:
-            if key not in current_item:
-                current_item[key] = {}
-            current_item = current_item[key]
-        key = keys[-1]
-        current_item[key] = value
-    return data_dict
-
-
-def get_test_idents(item):
-    try:
-        return item.location[2], item.location[0]
-    except AttributeError:
-        try:
-            return item.fspath.strpath, None
-        except AttributeError:
-            return (None, None)
-
-
-def get_name(obj):
-    return getattr(obj, "_param_name", None) or getattr(obj, "name", None) or str(obj)
-
-
-def overall_test_status(statuses):
+def overall_test_status(statuses: dict[str, tuple[str, bool]]) -> str:
+    """ """
+    # todo: let the pytest teststatus hook return the cases for whens
     # Handle some logic for when to count certain tests as which state
-    for when, status in statuses.items():
-        if (when == "call" or when == "setup") and status[1] and status[0] == "skipped":
+    for when, (outcome, wasxfail) in statuses.items():
+        if when in ("call", "setup") and wasxfail and outcome == "skipped":
             return "xfailed"
-        elif when == "call" and status[1] and status[0] == "passed":
+        elif when == "call" and wasxfail and outcome == "passed":
             return "xpassed"
-        elif (when == "setup" or when == "teardown") and status[0] == "failed":
+        elif when in ("setup", "teardown") and outcome == "failed":
             return "error"
-        elif status[0] == "skipped":
+        elif outcome == "skipped":
             return "skipped"
-        elif when == "call" and status[0] == "failed":
+        elif when == "call" and outcome == "failed":
             return "failed"
+        elif outcome == "manual":
+            return "manual"
+        elif outcome == "blocked":
+            return "blocked"
     return "passed"
 
 
-class TooManyRetriesError(Exception):
-    pass
+class ResultsDict(TypedDict):
+    duration: float | None
+    component: str | None
 
 
-class IbutsuArchiver(object):
+def update_extra_data_from_env(extra_data: dict[str, str | dict | None]):
+    extra_data = {"component": None, "env": None, **extra_data}
+
+    # Set an env var ID
+    env_id: str = os.environ.get("IBUTSU_ENV_ID", "")
+    if env_id:
+        extra_data.update(env_id=env_id)
+    # Auto-detect running in Jenkins and add to the metadata
+    if os.environ.get("JOB_NAME") and os.environ.get("BUILD_NUMBER"):
+        extra_data.update(
+            jenkins={
+                "job_name": os.environ.get("JOB_NAME"),
+                "build_number": os.environ.get("BUILD_NUMBER"),
+                "build_url": os.environ.get("BUILD_URL"),
+            }
+        )
+    # If the project is set via environment variables
+    if os.environ.get("IBUTSU_PROJECT"):
+        extra_data.update(project=os.environ.get("IBUTSU_PROJECT"))
+    return extra_data
+
+
+@dataclass(order=False, eq=False, unsafe_hash=True)
+class TimeTimer:
+    started_at: float | None = None
+    stopped_at: float | None = None
+
+    def start(self):
+        assert self.started_at is None
+        self.started_at = time.time()
+
+    def stop(self):
+        assert self.started_at is not None
+        assert self.stopped_at is None
+        self.stopped_at = time.time()
+
+    @property
+    def duration(self) -> float:
+
+        if self.started_at is not None:
+            if self.stopped_at is not None:
+                return self.stopped_at - self.started_at
+            else:
+                return time.time() - self.started_at
+        else:
+            return 0
+
+
+@dataclass(repr=False, order=False, eq=False)
+class IbutsuArchiver:
     """
     Save all Ibutsu results to archive
     """
 
-    _start_time = None
-    _stop_time = None
-    frontend = None
+    server: IbutsuApiServer | NoServer
+    temp_path: Path
+    source: str
+    _results: ResultsDict = field(
+        default_factory=lambda: ResultsDict(duration=None, component=None)
+    )
+    extra_data: DATA_OPTIONS = field(default_factory=DATA_OPTIONS.new)
+    archive_name: str | None = None
+    _timer: TimeTimer = field(default_factory=TimeTimer)
+    frontend: str | None = None
+    _session = None
 
-    def __init__(self, source=None, path=None, extra_data=None):
-        self.results = {}
-        self._run_id = None
-        self.run = None
-        self._temp_path = path
-        self.source = source or "local"
-        self.extra_data = extra_data or {"component": None, "env": None}
-        # pytest session object, to be set by pytest_collection_modifyitems below
-        self._session = None
-
-        # Set an env var ID
-        if os.environ.get("IBUTSU_ENV_ID"):
-            self.extra_data.update({"env_id": os.environ.get("IBUTSU_ENV_ID")})
-        # Auto-detect running in Jenkins and add to the metadata
-        if os.environ.get("JOB_NAME") and os.environ.get("BUILD_NUMBER"):
-            self.extra_data.update(
-                {
-                    "jenkins": {
-                        "job_name": os.environ.get("JOB_NAME"),
-                        "build_number": os.environ.get("BUILD_NUMBER"),
-                        "build_url": os.environ.get("BUILD_URL"),
-                    }
-                }
-            )
-        # If the project is set via environment variables
-        if os.environ.get("IBUTSU_PROJECT"):
-            self.extra_data.update({"project": os.environ.get("IBUTSU_PROJECT")})
+    run: dict | None = None
+    results: dict = field(default_factory=dict)
 
     def _status_to_summary(self, status):
         return {
@@ -176,49 +144,25 @@ class IbutsuArchiver(object):
             "xfailed": "xfailures",
             "xpassed": "xpasses",
             "tests": "tests",
-        }.get(status)
-
-    def get_temp_path(self, run):
-        if not self._temp_path:
-            self._temp_path = os.path.join(gettempdir(), run["id"])
-            os.makedirs(self._temp_path, exist_ok=True)
-        return self._temp_path
-
-    @property
-    def temp_path(self):
-        if not self.run:
-            raise Exception("Run ID has not yet been set")
-        return self.get_temp_path(self.run)
+        }.get(status, status)
 
     def _save_run(self, run):
         if not run.get("metadata"):
             run["metadata"] = {}
         run["metadata"].update(self.extra_data)
-        with open(os.path.join(self.get_temp_path(run), "run.json"), "w") as f:
-            json.dump(run, f, cls=DateTimeEncoder)
+
+        with self.temp_path.joinpath("run.json").open("w") as f:
+            json.dump(run, f)
 
     @property
-    def run_id(self):
-        if not self._run_id:
-            raise Exception("You need to use set_run_id() to set a run ID")
-        return self._run_id
-
-    @property
-    def duration(self):
-        if self._start_time and self._stop_time:
-            return self._stop_time - self._start_time
-        elif self._start_time:
-            return time.time() - self._start_time
-        else:
-            return 0
+    def duration(self) -> float:
+        return self._timer.duration
 
     def start_timer(self):
-        if not self._start_time:
-            self._start_time = time.time()
+        self._timer.start()
 
     def stop_timer(self):
-        if not self._stop_time:
-            self._stop_time = time.time()
+        self.timer.stop()
 
     def shutdown(self):
         # Gather the summary before building the archive
@@ -231,10 +175,11 @@ class IbutsuArchiver(object):
             "tests": 0,
             "collected": 0,
         }
-        for result in self.results.values():
+        for result in self._results.values():
+            if result is None:
+                continue
             key = self._status_to_summary(result["result"])
-            if key in summary:
-                summary[key] += 1
+            summary[key] = summary.get(key, 0) + 1
             # update the number of tests that actually ran
             summary["tests"] += 1
         # store the number of tests that were collected
@@ -243,14 +188,30 @@ class IbutsuArchiver(object):
         self.run["summary"] = summary
         self.update_run()
         # Build the tarball
-        self.tar_file = os.path.join(os.path.abspath("."), f"{self.run_id}.tar.gz")
-        print("Creating archive {}...".format(os.path.basename(self.tar_file)))
-        with tarfile.open(self.tar_file, "w:gz") as tar:
-            tar.add(self.temp_path, self.run_id)
+        if self.archive_name is not None:
+            self.tar_file = os.path.join(
+                os.path.abspath("."), self.archive_name.format(run_id=self.run_id)
+            )
+            print(f"Creating archive {os.path.basename(self.archive_name)}...")
+            with tarfile.open(self.tar_file, "w:gz") as tar:
+                tar.add(self.temp_path, self.run_id)
+        self.server.shutdown()
 
     def output_msg(self):
-        if hasattr(self, "tar_file"):
-            print(f"Saved results archive to {self.tar_file}")
+        with open(".last-ibutsu-run-id", "w") as f:
+            if self.run_id is not None:
+                f.write(self.run_id)
+        url = f"{self.server.frontend}/runs/{self.run_id}"
+        with open(".last-ibutsu-run-url", "w") as f:
+            f.write(url)
+        if not self.server._has_server_error:
+            print(f"Results can be viewed on: {url}")
+        else:
+            print(
+                "There was an error while uploading results,"
+                " and not all results were uploaded to the server."
+            )
+            print(f"All results were written to archive, partial results can be viewed on: {url}")
 
     def get_run_id(self):
         if not self.run:
@@ -266,56 +227,63 @@ class IbutsuArchiver(object):
                     "tests": 0,
                 },
                 "metadata": self.extra_data,
-                "source": getattr(self, "source", "local"),
+                "source": self.source,
                 "start_time": datetime.utcnow().isoformat(),
             }
             self.run = self.add_run(run=run)
         return self.run["id"]
 
-    def set_run_id(self, run_id):
+    def set_run_id(self, run_id: str):
         self._run_id = run_id
         self.refresh_run()
 
-    def add_run(self, run=None):
-        if not run.get("id"):
-            run["id"] = str(uuid.uuid4())
+    def add_run(self, run):
         if not run.get("source"):
             run["source"] = self.source
+        run = self.server.add_run(run)
+        assert run.get("id") is not None
         self._save_run(run)
+
         return run
 
     def refresh_run(self):
         """This does nothing, there's nothing to do here"""
-        pass
+        if self.run_id:
+            server_run = self.server.refresh_run(self.run_id)
+            if server_run:
+                self.run = server_run
 
-    def update_run(self, duration=None):
-        if duration:
+    def update_run(self, duration: float | None = None):
+        assert self.run is not None
+        if duration is not None:
             self.run["duration"] = duration
         self._save_run(self.run)
+        self.server.update_run(self.run)
 
     def add_result(self, result):
-        result_id = result.get("id")
-        if not result_id:
-            result_id = str(uuid.uuid4())
-            result["id"] = result_id
-        art_path = os.path.join(self.temp_path, result_id)
-        os.makedirs(art_path, exist_ok=True)
         if not result.get("metadata"):
             result["metadata"] = {}
         result["metadata"].update(self.extra_data)
-        with open(os.path.join(art_path, "result.json"), "w") as f:
-            json.dump(result, f, cls=DateTimeEncoder)
-        self.results[result_id] = result
+        server_result = self.server.add_result(result)
+        result.update(server_result)
+
+        self._write_result(result["id"], result)
+        assert result["id"]
         return result
 
     def update_result(self, id, result):
+        self.server.update_result(id, result)
+        self._write_result(id, result)
+
+    def _write_result(self, id, result):
+        assert result["id"] == id
         art_path = os.path.join(self.temp_path, id)
         os.makedirs(art_path, exist_ok=True)
         if not result.get("metadata"):
             result["metadata"] = {}
         result["metadata"].update(self.extra_data)
         with open(os.path.join(art_path, "result.json"), "w") as f:
-            json.dump(result, f, cls=DateTimeEncoder)
+            json.dump(result, f)
         self.results[id] = result
 
     def upload_artifact(self, id_, filename, data, is_run=False):
@@ -336,6 +304,8 @@ class IbutsuArchiver(object):
                 f" exceeds global Ibutsu upload limit of '{UPLOAD_LIMIT}' bytes."
                 f" File will not be uploaded to Ibutsu."
             )
+        if file_size < UPLOAD_LIMIT:
+            self.server.upload_artifact(id_, filename, data, is_run=is_run)
 
     def upload_artifact_raw(self, id_, filename, data, is_run=False):
         file_object = NamedTemporaryFile(delete=False)
@@ -409,9 +379,8 @@ class IbutsuArchiver(object):
         else:
             params = {}
         start_time = datetime.utcnow().isoformat()
-        fspath = item.location[0] or item.fspath.strpath
-        if "site-packages/" in fspath:
-            fspath = fspath[fspath.find("site-packages/") + 14 :]
+        fspath: str = item.location[0] or item.fspath.strpath
+        site_free_path = fspath.split("site-packages/", 1)[-1]
         data = {
             "result": "failed",
             "source": getattr(self, "source", "local"),
@@ -421,9 +390,10 @@ class IbutsuArchiver(object):
             "duration": 0.0,
             "metadata": {
                 "statuses": {},
+                "report_teststatuses": {},
                 "run": self.run_id,
                 "durations": {},
-                "fspath": fspath,
+                "fspath": site_free_path,
                 "markers": [
                     {"name": m.name, "args": m.args, "kwargs": m.kwargs}
                     for m in item.iter_markers()
@@ -469,14 +439,12 @@ class IbutsuArchiver(object):
         if not hasattr(report, "_ibutsu"):
             return
 
-        if hasattr(report, "wasxfail"):
-            xfail = True
-        else:
-            xfail = False
+        xfail = hasattr(report, "wasxfail")
 
         data = report._ibutsu["data"]
         data["metadata"]["user_properties"] = {key: value for key, value in report.user_properties}
-        data["metadata"]["statuses"][report.when] = (report.outcome, xfail)
+        data["metadata"]["statuses"][report.when] = report.outcome, xfail
+        data["metadata"]["report_teststatuses"][report.when] = None
         data["metadata"]["durations"][report.when] = report.duration
         data["result"] = overall_test_status(data["metadata"]["statuses"])
         if data["result"] == "skipped" and not data["metadata"].get("skip_reason"):
@@ -501,144 +469,22 @@ class IbutsuArchiver(object):
         self.update_run(duration=self.duration)
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_makereport(self, item, call):
+    def pytest_runtest_makereport(self, item: pytest.Item, call: pytest.CallInfo):
         outcome = yield
         res = outcome.get_result()  # will raise if outcome was exception
-        res._ibutsu = item._ibutsu
+        res._ibutsu = item._ibutsu  # type: ignore
+        categories = res._ibutsu["data"]["metadata"].setdefault("pytest-category", {})
 
+        categories[call.when] = item.config.hook.pytest_report_teststatus(
+            report=res, config=item.config
+        )[0]
 
-class IbutsuSender(IbutsuArchiver):
-    """
-    An enhanced Ibutsu plugin that also sends Ibutsu results to an Ibutsu server
-    """
-
-    def __init__(self, server_url, source=None, path=None, extra_data=None, token=None):
-        self.server_url = server_url
-        self._has_server_error = False
-        self._server_error_tbs = []
-        self._sender_cache = []
-
-        config = Configuration(access_token=token)
-        config.host = self.server_url
-        # Only set the SSL CA cert if one of the environment variables is set
-        for env_var in CA_BUNDLE_ENVS:
-            if os.getenv(env_var, None):
-                config.ssl_ca_cert = os.getenv(env_var)
-
-        api_client = ApiClient(config)
-        self.result_api = ResultApi(api_client)
-        self.artifact_api = ArtifactApi(api_client)
-        self.run_api = RunApi(api_client)
-        self.health_api = HealthApi(api_client)
-        super().__init__(source=source, path=path, extra_data=extra_data)
-
-    def _make_call(self, api_method, *args, **kwargs):
-        for res in self._sender_cache:
-            if res.ready():
-                self._sender_cache.remove(res)
-        try:
-            retries = 0
-            while retries < MAX_CALL_RETRIES:
-                try:
-                    out = api_method(*args, **kwargs)
-                    if "async_req" in kwargs:
-                        self._sender_cache.append(out)
-                    return out
-                except (RemoteDisconnected, ProtocolError, BadStatusLine):
-                    retries += 1
-            raise TooManyRetriesError("Too many retries while trying to call API")
-        except (MaxRetryError, ApiException, TooManyRetriesError) as e:
-            self._has_server_error = self._has_server_error or True
-            self._server_error_tbs.append(str(e))
-            return None
-
-    def add_run(self, run=None):
-        server_run = self._make_call(self.run_api.add_run, run=run)
-        if server_run:
-            run = server_run.to_dict()
-        return super().add_run(run)
-
-    def refresh_run(self):
-        # This can safely completely override the underlying method, because it does nothing
-        if not self.run_id:
-            return
-        server_run = self._make_call(self.run_api.get_run, self.run_id)
-        if server_run:
-            self.run = server_run.to_dict()
-
-    def update_run(self, duration=0.0):
-        super().update_run(duration)
-        self._make_call(self.run_api.update_run, self.run["id"], run=self.run)
-
-    def add_result(self, result):
-        if not result.get("metadata"):
-            result["metadata"] = {}
-        result["metadata"].update(self.extra_data)
-        server_result = self._make_call(self.result_api.add_result, result=result)
-        if server_result:
-            result.update(server_result.to_dict())
-        return super().add_result(result)
-
-    def update_result(self, id, result):
-        self._make_call(self.result_api.update_result, id, result=result, async_req=True)
-        super().update_result(id, result)
-
-    def upload_artifact(self, id_, filename, data, is_run=False):
-        super().upload_artifact(id_, filename, data, is_run=is_run)
-        file_size = os.stat(data).st_size
-        if file_size < UPLOAD_LIMIT:
-            with open(data, "rb") as file_content:
-                try:
-                    if not file_content.closed:
-                        if is_run:
-                            # id_ is the run_id, we don't check the return_type because
-                            # artifact.to_dict() in the controller contains a None value
-                            self._make_call(
-                                self.artifact_api.upload_artifact,
-                                filename,
-                                file_content,
-                                run_id=id_,
-                                _check_return_type=False,
-                            )
-                        else:
-                            # id_ is the result_id, we don't check the return_type because
-                            # artifact.to_dict() in the controller contains a None valued
-                            self._make_call(
-                                self.artifact_api.upload_artifact,
-                                filename,
-                                file_content,
-                                result_id=id_,
-                                _check_return_type=False,
-                            )
-
-                except ApiValueError:
-                    print(f"Uploading artifact '{filename}' failed as the file closed prematurely.")
-
-    def output_msg(self):
-        with open(".last-ibutsu-run-id", "w") as f:
-            f.write(self.run_id)
-        url = f"{self.frontend}/runs/{self.run_id}"
-        with open(".last-ibutsu-run-url", "w") as f:
-            f.write(url)
-        if not self._has_server_error:
-            print(f"Results can be viewed on: {url}")
+    @property
+    def run_id(self) -> str | None:
+        if self.run:
+            return self.run.get("id")
         else:
-            print(
-                "There was an error while uploading results,"
-                " and not all results were uploaded to the server."
-            )
-            print(f"All results were written to archive, partial results can be viewed on: {url}")
-        super().output_msg()
-
-    def shutdown(self):
-        super().shutdown()
-        print(f"Ibutsu client finishing up...({len(self._sender_cache)} tasks left)...")
-        while self._sender_cache:
-            for res in self._sender_cache:
-                if res.ready():
-                    self._sender_cache.remove(res)
-            time.sleep(0.1)
-        print("Cleanup complete")
+            return None
 
 
 def pytest_addoption(parser):
@@ -647,6 +493,8 @@ def pytest_addoption(parser):
     parser.addini("ibutsu_source", help="The source of the test run")
     parser.addini("ibutsu_metadata", help="Extra metadata to include with the test results")
     parser.addini("ibutsu_project", help="Project ID or name")
+    parser.addini("ibutsu_archive", help="archive name for artifact archive")
+
     group = parser.getgroup("ibutsu")
     group.addoption(
         "--ibutsu",
@@ -655,6 +503,13 @@ def pytest_addoption(parser):
         metavar="URL",
         default=None,
         help="URL for the Ibutsu server",
+    )
+    group.addoption(
+        "--ibutsu-archive",
+        dest="ibutsu_archive",
+        action="store",
+        default=None,
+        help="filename for the archivel, use {run_id} for the run_id",
     )
     group.addoption(
         "--ibutsu-token",
@@ -675,9 +530,9 @@ def pytest_addoption(parser):
     group.addoption(
         "--ibutsu-data",
         dest="ibutsu_data",
-        action="store",
+        action="append",
         metavar="KEY=VALUE",
-        nargs="*",
+        default=[],
         help="extra metadata for the test result, key=value",
     )
     group.addoption(
@@ -695,46 +550,66 @@ def pytest_configure_node(node):
     if not hasattr(node.config, "_ibutsu"):
         # If this plugin is not active
         return
-    node.workerinput["run_id"] = node.config._ibutsu.run_id
+    node.workerinput["ibutsu:run_id"] = node.config._ibutsu.run_id
+    node.workerinput["ibutsu:run_dir"] = node.config._ibutsu.tmp_path
 
 
-def pytest_configure(config):
-    ibutsu_server = config.getoption("ibutsu_server", None)
-    if config.getini("ibutsu_server"):
-        ibutsu_server = config.getini("ibutsu_server")
-    if not ibutsu_server:
-        return
-    ibutsu_token = config.getoption("ibutsu_token", None)
-    if config.getini("ibutsu_token"):
-        ibutsu_token = config.getini("ibutsu_token")
-    ibutsu_source = config.getoption("ibutsu_source", None)
-    if config.getini("ibutsu_source"):
-        ibutsu_source = config.getini("ibutsu_source")
+def _ini_or_option(config: pytest.Config, key: str) -> str | None:
+    option = config.getoption(key, None)
+    ini = config.getini(key)
+    return ini or option
+
+
+def _mk_ibutsu_tmpdir(config: pytest.Config) -> Path:
+    factory: pytest.TempPathFactory = getattr(config, "_tmp_path_factory")
+
+    return factory.mktemp("ibutsu", numbered=False)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_configure(config: pytest.Config) -> None:
+
+    ibutsu_server: str | None = _ini_or_option(config, "ibutsu_server")
+    ibutsu_archive = _ini_or_option(config, "ibutsu_archive")
+
+    tmp_path = _mk_ibutsu_tmpdir(config)
+
+    ibutsu_token = _ini_or_option(config, "ibutsu_token")
+    ibutsu_source = _ini_or_option(config, "ibutsu_source") or "local"
     ibutsu_data = parse_data_option(config.getoption("ibutsu_data", []))
-    ibutsu_project = config.getoption("ibutsu_project", None)
-    if config.getini("ibutsu_project"):
-        ibutsu_project = config.getini("ibutsu_project")
+    ibutsu_project = _ini_or_option(config, "ibutsu_project")
     if ibutsu_project:
         ibutsu_data.update({"project": ibutsu_project})
-    if ibutsu_server != "archive":
-        try:
-            print("Ibutsu server: {}".format(ibutsu_server))
-            if ibutsu_server.endswith("/"):
-                ibutsu_server = ibutsu_server[:-1]
-            if not ibutsu_server.endswith("/api"):
-                ibutsu_server += "/api"
-            ibutsu = IbutsuSender(
-                ibutsu_server, ibutsu_source, extra_data=ibutsu_data, token=ibutsu_token
-            )
-            ibutsu.frontend = ibutsu.health_api.get_health_info().frontend
-        except MaxRetryError:
-            print("Connection failure in health check - switching to archiver")
-            ibutsu = IbutsuArchiver(extra_data=ibutsu_data)
-        except ApiException:
-            print("Error in call to Ibutsu API")
-            ibutsu = IbutsuArchiver(extra_data=ibutsu_data)
+    server: IbutsuApiServer | NoServer
+    if not ibutsu_server:
+        server = NoServer()
+    elif not ibutsu_project:
+        print("project missing, swittching to no server")
+        server = NoServer()
+        if ibutsu_archive is None:
+            ibutsu_archive = "ibutsu-{run_id}.tar.gz"
     else:
-        ibutsu = IbutsuArchiver(extra_data=ibutsu_data)
+        assert ibutsu_server is not None
+        maybe_server = get_server(ibutsu_server, ibutsu_token)
+        if maybe_server is None:
+            print("switching to archiver")
+            server = NoServer()
+            if ibutsu_archive is None:
+                ibutsu_archive = "ibutsu-{run_id}.tar.gz"
+        else:
+            server = maybe_server
+
+    ibutsu = IbutsuArchiver(
+        server=server,
+        source=ibutsu_source,
+        temp_path=tmp_path,
+        extra_data=ibutsu_data,
+        archive_name=ibutsu_archive,
+    )
+
+    # HACK
+    ibutsu.get_run_id()
+
     if config.pluginmanager.has_plugin("xdist"):
         if hasattr(config, "workerinput") and config.workerinput.get("run_id"):
             ibutsu.set_run_id(config.workerinput["run_id"])
@@ -758,10 +633,11 @@ def pytest_configure(config):
         else:
             ibutsu.set_run_id(ibutsu.get_run_id())
     config._ibutsu = ibutsu
-    config.pluginmanager.register(config._ibutsu)
+
+    config.pluginmanager.register(ibutsu, name="ibutsu:sender")
 
 
-def pytest_collection_finish(session):
+def pytest_collection_finish(session: pytest.Session):
     if not hasattr(session.config, "_ibutsu"):
         # If this plugin is not active
         return
@@ -779,8 +655,6 @@ def pytest_unconfigure(config):
         config.pluginmanager.unregister(ibutsu_instance)
         config.hook.pytest_ibutsu_before_shutdown(config=config, ibutsu=ibutsu_instance)
         ibutsu_instance.shutdown()
-        if ibutsu_instance.run_id:
-            ibutsu_instance.output_msg()
 
 
 def pytest_addhooks(pluginmanager):
