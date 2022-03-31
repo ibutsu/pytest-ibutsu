@@ -2,12 +2,10 @@ import os
 import time
 import uuid
 from datetime import datetime
-from typing import Any
 from typing import ClassVar
 from typing import Dict
 from typing import List
 from typing import Optional
-from typing import Union
 
 import pytest
 from attrs import define
@@ -169,7 +167,7 @@ class TestResult:
             },
         )
 
-    def _get_xfail_reason(self, report: pytest.Report) -> Optional[str]:
+    def _get_xfail_reason(self, report) -> Optional[str]:
         xfail_reason = None
         if self.metadata.get("markers"):
             for marker in self.metadata["markers"]:
@@ -179,7 +177,7 @@ class TestResult:
             xfail_reason = report.wasxfail.split("reason: ")[1]
         return xfail_reason
 
-    def _get_skip_reason(self, report: pytest.Report) -> Optional[str]:
+    def _get_skip_reason(self, report) -> Optional[str]:
         skip_reason = None
         # first see if the reason is in the marker skip
         if self.metadata.get("markers"):
@@ -200,7 +198,7 @@ class TestResult:
                 pass
         return skip_reason
 
-    def set_metadata_reason(self, report: pytest.Report) -> None:
+    def set_metadata_reason(self, report) -> None:
         if self.result == "skipped" and not self.metadata.get("skip_reason"):
             reason = self._get_skip_reason(report)
             if reason:
@@ -210,14 +208,14 @@ class TestResult:
             if reason:
                 self.metadata["xfail_reason"] = reason
 
-    def set_metadata_statuses(self, report: pytest.Report) -> None:
+    def set_metadata_statuses(self, report) -> None:
         xfail = hasattr(report, "wasxfail")
         self.metadata["statuses"][report.when] = (report.outcome, xfail)
 
-    def set_metadata_durations(self, report: pytest.Report) -> None:
+    def set_metadata_durations(self, report) -> None:
         self.metadata["durations"][report.when] = report.duration
 
-    def set_metadata_user_properties(self, report: pytest.Report) -> None:
+    def set_metadata_user_properties(self, report) -> None:
         self.metadata["user_properties"] = dict(report.user_properties)
 
     @staticmethod
@@ -267,8 +265,8 @@ class TestResult:
 
     def set_metadata_short_tb(
         self,
-        call: pytest.CallInfo[Any],
-        report: Union[pytest.CollectReport, pytest.TestReport],
+        call,
+        report,
     ) -> None:
         val = safe_string(call.excinfo.value)
         last_lines = "\n".join(report.longreprtext.split("\n")[-4:])
@@ -277,5 +275,5 @@ class TestResult:
         )
         self.metadata["short_tb"] = short_tb
 
-    def set_metadata_exception_name(self, call: pytest.CallInfo[Any]) -> None:
+    def set_metadata_exception_name(self, call) -> None:
         self.metadata["exception_name"] = call.excinfo.type.__name__

@@ -1,6 +1,5 @@
 import os
 from datetime import datetime
-from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -9,6 +8,7 @@ from typing import Union
 
 import pytest
 
+from .archiver import dump_archive
 from .modeling import TestResult
 from .modeling import TestRun
 
@@ -57,7 +57,7 @@ class IbutsuPlugin:
         return data_dict
 
     @classmethod
-    def from_config(cls, config: pytest.Config) -> "IbutsuPlugin":
+    def from_config(cls, config) -> "IbutsuPlugin":
         ibutsu_server = config.getini("ibutsu_server") or config.getoption("ibutsu_server")
         ibutsu_token = config.getini("ibutsu_token") or config.getoption("ibutsu_token")
         ibutsu_source = config.getini("ibutsu_source") or config.getoption("ibutsu_source", "local")
@@ -75,7 +75,7 @@ class IbutsuPlugin:
 
     @pytest.mark.tryfirst
     def pytest_collection_modifyitems(
-        self, session: pytest.Session, config: pytest.Config, items: List[pytest.Item]
+        self, session: pytest.Session, config, items: List[pytest.Item]
     ) -> None:
         if not self.enabled:
             return
@@ -97,8 +97,8 @@ class IbutsuPlugin:
     def pytest_exception_interact(
         self,
         node: Union[pytest.Item, pytest.Collector],
-        call: pytest.CallInfo[Any],
-        report: Union[pytest.CollectReport, pytest.TestReport],
+        call,
+        report,
     ) -> None:
         if not self.enabled:
             return
@@ -107,7 +107,7 @@ class IbutsuPlugin:
         test_result.set_metadata_short_tb(call, report)
         test_result.set_metadata_exception_name(call)
 
-    def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
+    def pytest_runtest_logreport(self, report) -> None:
         if not self.enabled or report.nodeid not in self.results:
             return
         test_result = self.results[report.nodeid]
@@ -135,20 +135,22 @@ class IbutsuPlugin:
         self.run.set_summary_collected(session)
         self.run.set_duration()
 
-    def pytest_unconfigure(self, config: pytest.Config) -> None:
+    def pytest_unconfigure(self, config) -> None:
         if not self.enabled:
             return
         config.hook.pytest_ibutsu_before_shutdown(config=config, ibutsu=self)
+        if self.ibutsu_server == "archive":
+            dump_archive(self.run, self.results.values())
         # if self.run.id:
         #     self.output_msg()
 
-    def pytest_addhooks(self, pluginmanager: pytest.PytestPluginManager) -> None:
+    def pytest_addhooks(self, pluginmanager) -> None:
         from . import newhooks
 
         pluginmanager.add_hookspecs(newhooks)
 
 
-def pytest_addoption(parser: pytest.Parser, pluginmanager: pytest.PytestPluginManager) -> None:
+def pytest_addoption(parser, pluginmanager) -> None:
     parser.addini("ibutsu_server", help="The Ibutsu server to connect to")
     parser.addini("ibutsu_token", help="The JWT token to authenticate with the server")
     parser.addini("ibutsu_source", help="The source of the test run")
@@ -197,7 +199,7 @@ def pytest_addoption(parser: pytest.Parser, pluginmanager: pytest.PytestPluginMa
     )
 
 
-def pytest_configure(config: pytest.Config) -> None:
+def pytest_configure(config) -> None:
     plugin = IbutsuPlugin.from_config(config)
     config.pluginmanager.register(plugin)
     config.ibutsu_plugin = plugin
