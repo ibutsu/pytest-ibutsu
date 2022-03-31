@@ -6,6 +6,7 @@ from typing import ClassVar
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Union
 
 import pytest
 from attrs import define
@@ -112,7 +113,7 @@ class TestResult:
     source: str = "local"
     start_time: str = ""
     duration: float = 0.0
-    artifacts: List = field(factory=list)
+    _artifacts: Dict[str, Union[bytes, str]] = field(factory=dict)
 
     @staticmethod
     def _get_item_params(item: pytest.Item) -> Dict:
@@ -142,14 +143,14 @@ class TestResult:
         ]
 
     @staticmethod
-    def _get_test_idents(item: pytest.Item) -> Optional[str]:
+    def _get_test_idents(item: pytest.Item) -> str:
         try:
             return item.location[2]
         except AttributeError:
             try:
                 return item.fspath.strpath
             except AttributeError:
-                return None
+                return item.name
 
     @classmethod
     def from_item(cls, item: pytest.Item) -> "TestResult":
@@ -165,7 +166,7 @@ class TestResult:
                 "markers": cls._get_item_markers(item),
                 **item.config.ibutsu_plugin.extra_data,
             },
-        )
+        )  # type: ignore
 
     def _get_xfail_reason(self, report) -> Optional[str]:
         xfail_reason = None
@@ -277,3 +278,6 @@ class TestResult:
 
     def set_metadata_exception_name(self, call) -> None:
         self.metadata["exception_name"] = call.excinfo.type.__name__
+
+    def attach_artifact(self, name: str, content: Union[bytes, str]) -> None:
+        self._artifacts[name] = content

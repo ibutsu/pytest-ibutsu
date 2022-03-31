@@ -12,12 +12,6 @@ from .archiver import dump_archive
 from .modeling import TestResult
 from .modeling import TestRun
 
-# Place a limit on the file-size we can upload for artifacts
-UPLOAD_LIMIT = 5 * 1024 * 1024  # 5 MiB
-
-# Maximum number of times an API call is retried
-MAX_CALL_RETRIES = 3
-
 
 class IbutsuPlugin:
     def __init__(
@@ -34,7 +28,7 @@ class IbutsuPlugin:
         self.ibutsu_source = ibutsu_source
         self.extra_data = extra_data
         self.enabled = enabled
-        self.run = TestRun(project_id=ibutsu_project, source=self.ibutsu_source)
+        self.run = TestRun(project_id=ibutsu_project, source=self.ibutsu_source)  # type: ignore
         self.results: Dict[str, TestResult] = {}
 
     @staticmethod
@@ -70,9 +64,6 @@ class IbutsuPlugin:
         enabled = bool(ibutsu_server)
         return cls(ibutsu_server, ibutsu_token, ibutsu_source, extra_data, ibutsu_project, enabled)
 
-    def upload_artifact_from_file(self, *args):
-        pass
-
     @pytest.mark.tryfirst
     def pytest_collection_modifyitems(
         self, session: pytest.Session, config, items: List[pytest.Item]
@@ -102,8 +93,8 @@ class IbutsuPlugin:
     ) -> None:
         if not self.enabled:
             return
-        self.upload_artifact_raw(id, "traceback.log", bytes(report.longreprtext, "utf8"))
         test_result = self.results[node.nodeid]
+        test_result.attach_artifact("traceback.log", bytes(report.longreprtext, "utf8"))
         test_result.set_metadata_short_tb(call, report)
         test_result.set_metadata_exception_name(call)
 
@@ -141,8 +132,6 @@ class IbutsuPlugin:
         config.hook.pytest_ibutsu_before_shutdown(config=config, ibutsu=self)
         if self.ibutsu_server == "archive":
             dump_archive(self.run, self.results.values())
-        # if self.run.id:
-        #     self.output_msg()
 
     def pytest_addhooks(self, pluginmanager) -> None:
         from . import newhooks

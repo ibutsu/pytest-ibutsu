@@ -4,6 +4,7 @@ import time
 from contextlib import AbstractContextManager
 from io import BytesIO
 from typing import Iterable
+from typing import Union
 
 from attr import asdict
 
@@ -11,7 +12,7 @@ from .modeling import TestResult
 from .modeling import TestRun
 
 
-class IbutsuArchive(AbstractContextManager):
+class IbutsuArchiver(AbstractContextManager):
     def __init__(self, name: str) -> None:
         self.name = name
 
@@ -29,17 +30,31 @@ class IbutsuArchive(AbstractContextManager):
         tar_info.size = len(content)
         self.tar.addfile(tar_info, fileobj=BytesIO(content))
 
+    @staticmethod
+    def _get_bytes(value: Union[bytes, str]) -> bytes:
+        if isinstance(value, bytes):
+            return value
+        with open(value, "rb") as f:
+            return f.read()
+
     def add_result(self, run: TestRun, result: TestResult) -> None:
         self.add_dir(f"{run.id}/{result.id}")
-        content = bytes(json.dumps(asdict(result)), "utf-8")
+        # convert to dictionary only public fields
+        unstructured = asdict(result, filter=lambda attr, _: not attr.name.startswith("_"))
+        content = bytes(json.dumps(unstructured), "utf-8")
         self.add_file(f"{run.id}/{result.id}/result.json", content)
+        for name, value in result._artifacts.items():
+            content = self._get_bytes(value)
+            self.add_file(f"{run.id}/{result.id}/{name}", content)
 
     def add_run(self, run: TestRun) -> None:
         self.add_dir(run.id)
-        content = bytes(json.dumps(asdict(run)), "utf-8")
+        # convert to dictionary only public fields
+        unstructured = asdict(run, filter=lambda attr, _: not attr.name.startswith("_"))
+        content = bytes(json.dumps(unstructured), "utf-8")
         self.add_file("run.json", content)
 
-    def __enter__(self) -> "IbutsuArchive":
+    def __enter__(self) -> "IbutsuArchiver":
         self.tar = tarfile.open(f"{self.name}.tar.gz", "w:gz")
         return self
 
@@ -49,7 +64,7 @@ class IbutsuArchive(AbstractContextManager):
 
 
 def dump_archive(run: TestRun, results: Iterable[TestResult]) -> None:
-    with IbutsuArchive(run.id) as ibutsu_archive:
-        ibutsu_archive.add_run(run)
+    with IbutsuArchiver(run.id) as ibutsu_archiver:
+        ibutsu_archiver.add_run(run)
         for result in results:
-            ibutsu_archive.add_result(run, result)
+            ibutsu_archiver.add_result(run, result)
