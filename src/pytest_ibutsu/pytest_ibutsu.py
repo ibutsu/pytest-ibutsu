@@ -8,9 +8,10 @@ from typing import Union
 
 import pytest
 
-from .archiver import dump_archive
+from .archiver import dump_to_archive
 from .modeling import TestResult
 from .modeling import TestRun
+from .sender import send_data_to_ibutsu
 
 
 class IbutsuPlugin:
@@ -26,9 +27,12 @@ class IbutsuPlugin:
         self.ibutsu_server = ibutsu_server
         self.ibutsu_token = ibutsu_token
         self.ibutsu_source = ibutsu_source
+        self.ibutsu_project = ibutsu_project
         self.extra_data = extra_data
         self.enabled = enabled
-        self.run = TestRun(project_id=ibutsu_project, source=self.ibutsu_source)  # type: ignore
+        self.run = TestRun(
+            source=self.ibutsu_source, metadata={"project": self.ibutsu_project}
+        )  # type: ignore
         self.results: Dict[str, TestResult] = {}
 
     @staticmethod
@@ -54,8 +58,10 @@ class IbutsuPlugin:
     def from_config(cls, config) -> "IbutsuPlugin":
         ibutsu_server = config.getini("ibutsu_server") or config.getoption("ibutsu_server")
         ibutsu_token = config.getini("ibutsu_token") or config.getoption("ibutsu_token")
-        ibutsu_source = config.getini("ibutsu_source") or config.getoption("ibutsu_source", "local")
-        extra_data = cls._parse_data_option(config.getoption("ibutsu_data", []))
+        ibutsu_source = (
+            config.getini("ibutsu_source") or config.getoption("ibutsu_source") or "local"
+        )
+        extra_data = cls._parse_data_option(config.getoption("ibutsu_data", default=[]))
         ibutsu_project = (
             os.getenv("IBUTSU_PROJECT")
             or config.getini("ibutsu_project")
@@ -131,7 +137,9 @@ class IbutsuPlugin:
             return
         config.hook.pytest_ibutsu_before_shutdown(config=config, ibutsu=self)
         if self.ibutsu_server == "archive":
-            dump_archive(self.run, self.results.values())
+            dump_to_archive(self)
+        else:
+            send_data_to_ibutsu(self)
 
     def pytest_addhooks(self, pluginmanager) -> None:
         from . import newhooks

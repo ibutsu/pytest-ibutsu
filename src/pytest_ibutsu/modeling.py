@@ -9,6 +9,7 @@ from typing import Optional
 from typing import Union
 
 import pytest
+from attrs import asdict
 from attrs import define
 from attrs import field
 
@@ -56,7 +57,6 @@ class Summary:
 
 @define
 class TestRun:
-    project_id: Optional[str] = None
     component: Optional[str] = None
     env: Optional[str] = None
     id: str = field(factory=lambda: str(uuid.uuid4()))
@@ -88,6 +88,9 @@ class TestRun:
     def set_summary_collected(self, session: pytest.Session) -> None:
         self.summary.collected = getattr(session, "testscollected", self.summary.tests)
 
+    def to_dict(self) -> Dict:
+        return asdict(self, filter=lambda attr, _: not attr.name.startswith("_"))
+
 
 @define
 class TestResult:
@@ -108,7 +111,6 @@ class TestResult:
     id: str = field(factory=lambda: str(uuid.uuid4()))
     metadata: Dict = field(factory=dict)
     params: Dict = field(factory=dict)
-    project_id: Optional[str] = None
     run_id: Optional[str] = None
     source: str = "local"
     start_time: str = ""
@@ -164,6 +166,7 @@ class TestResult:
                 "durations": {},
                 "fspath": cls._get_item_fspath(item),
                 "markers": cls._get_item_markers(item),
+                "project": item.config.ibutsu_plugin.ibutsu_project,
                 **item.config.ibutsu_plugin.extra_data,
             },
         )  # type: ignore
@@ -281,3 +284,6 @@ class TestResult:
 
     def attach_artifact(self, name: str, content: Union[bytes, str]) -> None:
         self._artifacts[name] = content
+
+    def to_dict(self) -> Dict:
+        return asdict(self, filter=lambda attr, _: not attr.name.startswith("_"))

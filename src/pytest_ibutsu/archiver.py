@@ -3,10 +3,12 @@ import tarfile
 import time
 from contextlib import AbstractContextManager
 from io import BytesIO
-from typing import Iterable
+from typing import TYPE_CHECKING
 from typing import Union
 
-from attr import asdict
+if TYPE_CHECKING:
+    from .pytest_ibutsu import IbutsuPlugin
+
 
 from .modeling import TestResult
 from .modeling import TestRun
@@ -39,9 +41,7 @@ class IbutsuArchiver(AbstractContextManager):
 
     def add_result(self, run: TestRun, result: TestResult) -> None:
         self.add_dir(f"{run.id}/{result.id}")
-        # convert to dictionary only public fields
-        unstructured = asdict(result, filter=lambda attr, _: not attr.name.startswith("_"))
-        content = bytes(json.dumps(unstructured), "utf-8")
+        content = bytes(json.dumps(result.to_dict()), "utf-8")
         self.add_file(f"{run.id}/{result.id}/result.json", content)
         for name, value in result._artifacts.items():
             content = self._get_bytes(value)
@@ -49,9 +49,7 @@ class IbutsuArchiver(AbstractContextManager):
 
     def add_run(self, run: TestRun) -> None:
         self.add_dir(run.id)
-        # convert to dictionary only public fields
-        unstructured = asdict(run, filter=lambda attr, _: not attr.name.startswith("_"))
-        content = bytes(json.dumps(unstructured), "utf-8")
+        content = bytes(json.dumps(run.to_dict()), "utf-8")
         self.add_file("run.json", content)
 
     def __enter__(self) -> "IbutsuArchiver":
@@ -60,11 +58,11 @@ class IbutsuArchiver(AbstractContextManager):
 
     def __exit__(self, *exc_details) -> None:
         self.tar.close()
-        print(f"Saved results archive to {self.name}.tar.gz")
 
 
-def dump_archive(run: TestRun, results: Iterable[TestResult]) -> None:
-    with IbutsuArchiver(run.id) as ibutsu_archiver:
-        ibutsu_archiver.add_run(run)
-        for result in results:
-            ibutsu_archiver.add_result(run, result)
+def dump_to_archive(ibutsu_plugin: "IbutsuPlugin") -> None:
+    with IbutsuArchiver(ibutsu_plugin.run.id) as ibutsu_archiver:
+        ibutsu_archiver.add_run(ibutsu_plugin.run)
+        for result in ibutsu_plugin.results.values():
+            ibutsu_archiver.add_result(ibutsu_plugin.run, result)
+        print(f"Saved results archive to {ibutsu_archiver.name}.tar.gz")
