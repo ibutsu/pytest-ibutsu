@@ -1,9 +1,12 @@
+import argparse
 import os
+import pickle
+import re
+import uuid
 from datetime import datetime
 from typing import Dict
 from typing import List
 from typing import Optional
-from typing import Tuple
 from typing import Union
 
 import pytest
@@ -14,25 +17,53 @@ from .modeling import TestRun
 from .sender import send_data_to_ibutsu
 
 
+UUID_REGEX = re.compile(
+    r"^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}$"
+)
+
+
+class UUIDAction(argparse.Action):
+    def __call__(self, parser, namespace, value, option_string=None):
+        if not re.match(UUID_REGEX, value):
+            raise ValueError("Not a uuid")
+        setattr(namespace, self.dest, value)
+
+
+def is_xdist_worker(config) -> bool:
+    """Return `True` if this is an xdist worker, `False` otherwise
+    :param request_or_session: the `pytest` `request` or `session` object
+    """
+    return hasattr(config, "workerinput")
+
+
+def is_xdist_controller(config) -> bool:
+    """Return `True` if this is the xdist controller, `False` otherwise
+    Note: this method also returns `False` when distribution has not been
+    activated at all.
+    :param request_or_session: the `pytest` `request` or `session` object
+    """
+    return not is_xdist_worker(config) and config.option.dist != "no"
+
+
 class IbutsuPlugin:
     def __init__(
         self,
-        ibutsu_server: str,
-        ibutsu_token: str,
-        ibutsu_source: str,
-        extra_data: Dict[str, str],
-        ibutsu_project: str,
         enabled: bool,
+        ibutsu_server: str,
+        ibutsu_token: Optional[str],
+        ibutsu_source: str,
+        ibutsu_project: str,
+        extra_data: Dict,
+        run: TestRun,
     ) -> None:
         self.ibutsu_server = ibutsu_server
         self.ibutsu_token = ibutsu_token
         self.ibutsu_source = ibutsu_source
         self.ibutsu_project = ibutsu_project
-        self.extra_data = extra_data
         self.enabled = enabled
-        self.run = TestRun(
-            source=self.ibutsu_source, metadata={"project": self.ibutsu_project}
-        )  # type: ignore
+        self.extra_data = extra_data
+        self.run = run
+        self.workers_runs: List[TestRun] = []
         self.results: Dict[str, TestResult] = {}
 
     @staticmethod
@@ -58,22 +89,24 @@ class IbutsuPlugin:
     def from_config(cls, config) -> "IbutsuPlugin":
         ibutsu_server = config.getini("ibutsu_server") or config.getoption("ibutsu_server")
         ibutsu_token = config.getini("ibutsu_token") or config.getoption("ibutsu_token")
-        ibutsu_source = (
-            config.getini("ibutsu_source") or config.getoption("ibutsu_source") or "local"
-        )
-        extra_data = cls._parse_data_option(config.getoption("ibutsu_data", default=[]))
+        ibutsu_source = config.getini("ibutsu_source") or config.getoption("ibutsu_source")
+        extra_data = cls._parse_data_option(config.getoption("ibutsu_data"))
         ibutsu_project = (
             os.getenv("IBUTSU_PROJECT")
             or config.getini("ibutsu_project")
-            or config.getoption("ibutsu_project", None)
+            or config.getoption("ibutsu_project")
         )
-        enabled = bool(ibutsu_server)
-        return cls(ibutsu_server, ibutsu_token, ibutsu_source, extra_data, ibutsu_project, enabled)
+        run_id = config.getini("ibutsu_run_id") or config.getoption("ibutsu_run_id")
+        run = TestRun(
+            id=run_id, source=ibutsu_source, metadata={"project": ibutsu_project, **extra_data}
+        )  # type: ignore
+        enabled = False if config.option.collectonly else bool(ibutsu_server)
+        return cls(
+            enabled, ibutsu_server, ibutsu_token, ibutsu_source, ibutsu_project, extra_data, run
+        )
 
     @pytest.mark.tryfirst
-    def pytest_collection_modifyitems(
-        self, session: pytest.Session, config, items: List[pytest.Item]
-    ) -> None:
+    def pytest_collection_modifyitems(self, items: List[pytest.Item]) -> None:
         if not self.enabled:
             return
         for item in items:
@@ -113,9 +146,7 @@ class IbutsuPlugin:
         test_result.set_metadata_user_properties(report)
         test_result.set_metadata_reason(report)
 
-    def pytest_runtest_logfinish(
-        self, nodeid: str, location: Tuple[str, Optional[int], str]
-    ) -> None:
+    def pytest_runtest_logfinish(self, nodeid: str) -> None:
         if not self.enabled or nodeid not in self.results:
             return
         test_result = self.results[nodeid]
@@ -124,22 +155,24 @@ class IbutsuPlugin:
         test_result.set_duration()
         self.run.summary.increment(test_result)
 
-    def pytest_sessionfinish(
-        self, session: pytest.Session, exitstatus: Union[int, pytest.ExitCode]
-    ) -> None:
+    @pytest.hookimpl(optionalhook=True)
+    def pytest_testnodedown(self, node) -> None:
+        self.workers_runs.append(pickle.loads(node.workeroutput["run"]))
+        self.results.update(pickle.loads(node.workeroutput["results"]))
+
+    def pytest_sessionfinish(self, session: pytest.Session) -> None:
         if not self.enabled:
             return
         self.run.set_summary_collected(session)
         self.run.set_duration()
-
-    def pytest_unconfigure(self, config) -> None:
-        if not self.enabled:
+        if is_xdist_worker(session.config):
+            session.config.workeroutput["run"] = pickle.dumps(self.run)
+            session.config.workeroutput["results"] = pickle.dumps(self.results)
             return
-        config.hook.pytest_ibutsu_before_shutdown(config=config, ibutsu=self)
-        if self.ibutsu_server == "archive":
-            dump_to_archive(self)
-        else:
-            send_data_to_ibutsu(self)
+        if is_xdist_controller(session.config):
+            self.run = TestRun.from_test_runs(self.workers_runs)
+        session.config.hook.pytest_ibutsu_before_shutdown(config=session.config, ibutsu=self)
+        dump_to_archive(self) if self.ibutsu_server == "archive" else send_data_to_ibutsu(self)
 
     def pytest_addhooks(self, pluginmanager) -> None:
         from . import newhooks
@@ -147,12 +180,13 @@ class IbutsuPlugin:
         pluginmanager.add_hookspecs(newhooks)
 
 
-def pytest_addoption(parser, pluginmanager) -> None:
+def pytest_addoption(parser) -> None:
     parser.addini("ibutsu_server", help="The Ibutsu server to connect to")
     parser.addini("ibutsu_token", help="The JWT token to authenticate with the server")
     parser.addini("ibutsu_source", help="The source of the test run")
     parser.addini("ibutsu_metadata", help="Extra metadata to include with the test results")
     parser.addini("ibutsu_project", help="Project ID or name")
+    parser.addini("ibutsu_run_id", help="Test run id")
     group = parser.getgroup("ibutsu")
     group.addoption(
         "--ibutsu",
@@ -175,7 +209,7 @@ def pytest_addoption(parser, pluginmanager) -> None:
         dest="ibutsu_source",
         action="store",
         metavar="SOURCE",
-        default=None,
+        default="local",
         help="set the source for the tests",
     )
     group.addoption(
@@ -193,6 +227,14 @@ def pytest_addoption(parser, pluginmanager) -> None:
         metavar="PROJECT",
         default=None,
         help="project id or name",
+    )
+    group.addoption(
+        "--ibutsu-run-id",
+        dest="ibutsu_run_id",
+        action=UUIDAction,
+        metavar="RUN_ID",
+        default=str(uuid.uuid4()),
+        help="test run id",
     )
 
 

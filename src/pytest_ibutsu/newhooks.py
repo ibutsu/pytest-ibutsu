@@ -1,4 +1,4 @@
-from .pytest_ibutsu import IbutsuPlugin
+from .pytest_plugin import IbutsuPlugin
 
 
 def pytest_ibutsu_before_shutdown(config, ibutsu: IbutsuPlugin):

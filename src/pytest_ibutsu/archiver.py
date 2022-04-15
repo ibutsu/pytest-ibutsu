@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from typing import Union
 
 if TYPE_CHECKING:
-    from .pytest_ibutsu import IbutsuPlugin
+    from .pytest_plugin import IbutsuPlugin
 
 
 from .modeling import TestResult

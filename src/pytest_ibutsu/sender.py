@@ -25,7 +25,7 @@ from .modeling import TestRun
 
 
 if TYPE_CHECKING:
-    from .pytest_ibutsu import IbutsuPlugin
+    from .pytest_plugin import IbutsuPlugin
 
 
 # Place a limit on the file-size we can upload for artifacts

@@ -37,6 +37,7 @@ class Summary:
     errors: int = 0
     xfailures: int = 0
     xpasses: int = 0
+    skips: int = 0
     tests: int = 0
     collected: int = 0
     not_run: int = 0
@@ -50,8 +51,8 @@ class Summary:
             "xpassed": "xpasses",
         }.get(test_result.result)
         if attr:
-            inc = getattr(self, attr)
-            setattr(self, attr, inc + 1)
+            current_count = getattr(self, attr)
+            setattr(self, attr, current_count + 1)
         self.tests += 1
 
 
@@ -61,7 +62,7 @@ class TestRun:
     env: Optional[str] = None
     id: str = field(factory=lambda: str(uuid.uuid4()))
     metadata: Dict = field(factory=dict)
-    source: str = "local"
+    source: Optional[str] = None
     start_time: str = ""
     duration: float = 0.0
     _start_unix_time: float = field(init=False, default=0.0)
@@ -90,6 +91,48 @@ class TestRun:
 
     def to_dict(self) -> Dict:
         return asdict(self, filter=lambda attr, _: not attr.name.startswith("_"))
+
+    @staticmethod
+    def combine_summaries(runs: List["TestRun"]) -> Summary:
+        summary = Summary()
+        summary.collected = runs[0].summary.collected
+        for run in runs:
+            summary.failures += run.summary.failures
+            summary.errors += run.summary.errors
+            summary.xfailures += run.summary.xfailures
+            summary.xpasses += run.summary.xpasses
+            summary.skips += run.summary.skips
+            summary.tests += run.summary.tests
+            summary.not_run += run.summary.not_run
+        return summary
+
+    @staticmethod
+    def get_start_time(runs: List["TestRun"]) -> str:
+        return min(runs, key=lambda run: run.start_time).start_time
+
+    @staticmethod
+    def get_duration(runs: List["TestRun"]) -> float:
+        return max(runs, key=lambda run: run.duration).duration
+
+    @staticmethod
+    def get_metadata(runs: List["TestRun"]) -> Dict:
+        metadata = {}
+        for run in runs:
+            metadata.update(run.metadata)
+        return metadata
+
+    @classmethod
+    def from_test_runs(cls, runs: List["TestRun"]) -> "TestRun":
+        return TestRun(
+            component=runs[0].component,
+            env=runs[0].env,
+            id=runs[0].id,
+            metadata=cls.get_metadata(runs),
+            source=runs[0].source,
+            start_time=cls.get_start_time(runs),
+            duration=cls.get_duration(runs),
+            summary=cls.combine_summaries(runs),
+        )  # type: ignore
 
 
 @define
@@ -160,6 +203,7 @@ class TestResult:
             test_id=cls._get_test_idents(item),
             params=cls._get_item_params(item),
             source=item.config.ibutsu_plugin.ibutsu_source,
+            run_id=item.config.ibutsu_plugin.run.id,
             metadata={
                 "statuses": {},
                 "run": item.config.ibutsu_plugin.run.id,
@@ -167,7 +211,7 @@ class TestResult:
                 "fspath": cls._get_item_fspath(item),
                 "markers": cls._get_item_markers(item),
                 "project": item.config.ibutsu_plugin.ibutsu_project,
-                **item.config.ibutsu_plugin.extra_data,
+                **item.config.ibutsu_plugin.run.metadata,
             },
         )  # type: ignore
 
