@@ -41,7 +41,7 @@ def result(pytester, request, run_id):
 
 
 def test_archive_file(pytester, result, run_id):
-    result.stdout.fnmatch_lines([f"Saved results archive to {run_id}.tar.gz"])
+    result.stdout.re_match_lines([f".*Saved results archive to {run_id}.tar.gz$"])
     archive_name = f"{run_id}.tar.gz"
     archive = pytester.path.joinpath(archive_name)
     assert archive.is_file()

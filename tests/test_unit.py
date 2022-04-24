@@ -1,12 +1,12 @@
 from pytest_ibutsu.modeling import Summary
-from pytest_ibutsu.modeling import TestResult
-from pytest_ibutsu.modeling import TestRun
+from pytest_ibutsu.modeling import TestResult as TResult
+from pytest_ibutsu.modeling import TestRun as TRun
 
 
 def test_summary_increment():
     summary = Summary()
     results = ["passed", "failed", "xfailed", "xpassed", "error"]
-    test_results = [TestResult(test_id="test", result=result) for result in results]
+    test_results = [TResult(test_id="test", result=result) for result in results]
     for test_result in test_results:
         summary.increment(test_result)
     assert summary.tests == 5
@@ -17,14 +17,14 @@ def test_summary_increment():
 
 
 def test_run_env_vars(monkeypatch):
-    run = TestRun()
+    run = TRun()
     assert "jenkins" not in run.metadata
     assert "env_id" not in run.metadata
     monkeypatch.setenv("JOB_NAME", "test_job")
     monkeypatch.setenv("BUILD_NUMBER", "123")
     monkeypatch.setenv("BUILD_URL", "http://example.org")
     monkeypatch.setenv("IBUTSU_ENV_ID", "some_env_id")
-    run = TestRun()
+    run = TRun()
     assert run.metadata["jenkins"] == {
         "job_name": "test_job",
         "build_number": "123",
@@ -34,7 +34,7 @@ def test_run_env_vars(monkeypatch):
 
 
 def test_run_to_dict(subtests):
-    run = TestRun()
+    run = TRun()
     assert hasattr(run, "_start_unix_time")
     dict_run = run.to_dict()
     for key in dict_run:
