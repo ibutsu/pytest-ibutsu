@@ -10,7 +10,10 @@ ARCHIVE_REGEX = re.compile(
     r"^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}\.tar\.gz$"
 )
 
-PYTEST_ARGS = [[], ["-p", "xdist", "-n", "2"]]
+PYTEST_ARGS = [
+    pytest.param([], id="no-xdist"),
+    pytest.param(["-p", "xdist", "-n", "2"], id="xdist"),
+]
 
 
 def remove_varying_fields_from_result(result):
@@ -28,7 +31,7 @@ def run_id():
     return str(uuid.uuid4())
 
 
-@pytest.fixture(params=PYTEST_ARGS, ids=["no-xdist", "xdist"])
+@pytest.fixture(params=PYTEST_ARGS)
 def result(pytester, request, run_id):
     pytester.copy_example("tests/example_test_to_report_to_ibutsu.py")
     args = request.param + [
