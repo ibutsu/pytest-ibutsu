@@ -45,6 +45,14 @@ def is_xdist_controller(config) -> bool:
     return not is_xdist_worker(config) and config.option.dist != "no"
 
 
+def merge_dicts(old_dict, new_dict):
+    for key, value in old_dict.items():
+        if key not in new_dict:
+            new_dict[key] = value
+        elif isinstance(value, dict):
+            merge_dicts(value, new_dict[key])
+
+
 class IbutsuPlugin:
     def __init__(
         self,
@@ -65,6 +73,24 @@ class IbutsuPlugin:
         self.run = run
         self.workers_runs: List[TestRun] = []
         self.results: Dict[str, TestResult] = {}
+        # TODO backwards compatibility
+        self._data = {}  # type: ignore
+
+    def __getitem__(self, key):
+        # TODO backwards compatibility
+        return self._data[key]
+
+    def __setitem__(self, key, value):
+        # TODO backwards compatibility
+        self._data[key] = value
+
+    def upload_artifact_from_file(self, node_id, file_name, file_path):
+        # TODO backwards compatibility
+        test_result = self.results[node_id]
+        test_result.attach_artifact(file_name, file_path)
+
+    # TODO backwards compatibility
+    upload_artifact_raw = upload_artifact_from_file
 
     @staticmethod
     def _parse_data_option(data_list):
@@ -111,6 +137,12 @@ class IbutsuPlugin:
             return
         for item in items:
             item.ibutsu_result = TestResult.from_item(item)
+            # TODO backwards compatibility
+            item._ibutsu = {
+                "id": item.nodeid,
+                "data": {"metadata": {}},
+                "artifacts": {},
+            }
 
     def pytest_collection_finish(self, session: pytest.Session) -> None:
         if not self.enabled:
@@ -120,6 +152,10 @@ class IbutsuPlugin:
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_protocol(self, item: pytest.Item) -> Optional[object]:
         if self.enabled:
+            # TODO backwards compatibility
+            metadata = getattr(item, "_ibutsu", {}).get("metadata", {})
+            # TODO backwards compatibility
+            merge_dicts(metadata, item.ibutsu_result.metadata)
             item.ibutsu_result.start_time = datetime.utcnow().isoformat()
             self.results[item.nodeid] = item.ibutsu_result
         yield
@@ -172,7 +208,8 @@ class IbutsuPlugin:
         if is_xdist_controller(session.config):
             self.run = TestRun.from_test_runs(self.workers_runs)
         session.config.hook.pytest_ibutsu_before_shutdown(config=session.config, ibutsu=self)
-        dump_to_archive(self) if self.ibutsu_server == "archive" else send_data_to_ibutsu(self)
+        dump_to_archive(self)
+        send_data_to_ibutsu(self)
 
     def pytest_addhooks(self, pluginmanager) -> None:
         from . import newhooks
@@ -242,3 +279,5 @@ def pytest_configure(config) -> None:
     plugin = IbutsuPlugin.from_config(config)
     config.pluginmanager.register(plugin)
     config.ibutsu_plugin = plugin
+    # TODO backwards compatibility
+    config._ibutsu = plugin
