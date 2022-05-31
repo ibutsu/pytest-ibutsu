@@ -29,3 +29,7 @@ def test_pass():
 
 def test_fail():
     pytest.fail("I don't like tests that pass")
+
+
+def test_exception():
+    raise Exception("Boom!")

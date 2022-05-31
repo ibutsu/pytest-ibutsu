@@ -2,6 +2,7 @@ import json
 import re
 import tarfile
 import uuid
+from pathlib import Path
 
 import expected_results
 import pytest
@@ -14,6 +15,10 @@ PYTEST_ARGS = [
     pytest.param([], id="no-xdist"),
     pytest.param(["-p", "xdist", "-n", "2"], id="xdist"),
 ]
+
+CURRENT_DIR = Path(__file__).parent
+
+pytest_plugins = "pytester"
 
 
 def remove_varying_fields_from_result(result):
@@ -33,7 +38,8 @@ def run_id():
 
 @pytest.fixture(params=PYTEST_ARGS)
 def result(pytester, request, run_id):
-    pytester.copy_example("tests/example_test_to_report_to_ibutsu.py")
+    pytester.copy_example(CURRENT_DIR / "example_test_to_report_to_ibutsu.py")
+    pytester.makeconftest((CURRENT_DIR / "example_conftest.py").read_text())
     args = request.param + [
         "--ibutsu=archive",
         "--ibutsu-project=test_project",
@@ -88,8 +94,8 @@ def test_archive_content_run(archive, run_id):
 
 def test_archive_content_results(archive, subtests, run_id):
     members = [m for m in archive.getmembers() if m.isfile() and "result.json" in m.name]
-    assert len(members) == 6
-    for _, member in enumerate(members):
+    assert len(members) == 7
+    for member in members:
         with subtests.test(name=member.name):
             o = archive.extractfile(member)
             result = json.load(o)
@@ -104,3 +110,27 @@ def test_archive_content_results(archive, subtests, run_id):
             result = remove_varying_fields_from_result(result)
             expected_result = expected_results.RESULTS[result["test_id"]]
             assert result == expected_result
+
+
+@pytest.mark.parametrize(
+    "artifact_name", ["legacy_exception", "actual_exception", "runtest_teardown", "runtest"]
+)
+def test_archive_artifacts(archive, subtests, artifact_name):
+    run_json_tar_info = archive.extractfile(archive.getmembers()[1])
+    run_json = json.load(run_json_tar_info)
+    members = [m for m in archive.getmembers() if m.isfile() and f"{artifact_name}.log" in m.name]
+    collected_or_failed = (
+        "collected" if artifact_name in ["runtest_teardown", "runtest"] else "failed"
+    )
+    collected_or_failures = (
+        "collected" if artifact_name in ["runtest_teardown", "runtest"] else "failures"
+    )
+    assert (
+        len(members) == run_json["summary"][collected_or_failures]
+    ), f"There should be {artifact_name}.log for each {collected_or_failed} test"
+    for member in members:
+        test_uuid = Path(member.name).parent.stem
+        with subtests.test(name=member.name):
+            log = archive.extractfile(member)
+            log.read() == bytes(f"{artifact_name}_{test_uuid}", "utf8")
+    members = [m for m in archive.getmembers() if m.isfile() and f"{artifact_name}.log" in m.name]
