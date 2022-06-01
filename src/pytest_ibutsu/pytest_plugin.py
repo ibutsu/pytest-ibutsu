@@ -152,10 +152,6 @@ class IbutsuPlugin:
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_protocol(self, item: pytest.Item) -> Optional[object]:
         if self.enabled:
-            # TODO backwards compatibility
-            metadata = getattr(item, "_ibutsu", {}).get("metadata", {})
-            # TODO backwards compatibility
-            merge_dicts(metadata, item.ibutsu_result.metadata)
             item.ibutsu_result.start_time = datetime.utcnow().isoformat()
             self.results[item.nodeid] = item.ibutsu_result
         yield
@@ -182,6 +178,15 @@ class IbutsuPlugin:
         test_result.set_metadata_user_properties(report)
         test_result.set_metadata_reason(report)
 
+    def pytest_runtest_makereport(self, item, call):
+        """Backward compatibility hook to merge metadata from item._ibutsu["data"]["metadata"]"""
+        if not self.enabled:
+            return
+        # TODO backwards compatibility
+        metadata = getattr(item, "_ibutsu", {}).get("data", {}).get("metadata", {})
+        # TODO backwards compatibility
+        merge_dicts(metadata, item.ibutsu_result.metadata)
+
     def pytest_runtest_logfinish(self, nodeid: str) -> None:
         if not self.enabled or nodeid not in self.results:
             return
@@ -201,6 +206,8 @@ class IbutsuPlugin:
             return
         self.run.set_summary_collected(session)
         self.run.set_duration()
+        # TODO backwards compatibility
+        merge_dicts(self.run["metadata"], self.run.metadata)
         if is_xdist_worker(session.config):
             session.config.workeroutput["run"] = pickle.dumps(self.run)
             session.config.workeroutput["results"] = pickle.dumps(self.results)

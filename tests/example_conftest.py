@@ -45,3 +45,8 @@ def pytest_runtest_teardown(item):
         "runtest_teardown.log",
         bytes(f"runtest_teardown_{item.ibutsu_result.id}", "utf-8"),
     )
+
+
+@pytest.mark.tryfirst
+def pytest_sessionfinish(session):
+    session.config._ibutsu.run["metadata"]["accessibility"] = True

@@ -67,6 +67,16 @@ class TestRun:
     duration: float = 0.0
     _start_unix_time: float = field(init=False, default=0.0)
     summary: Summary = field(factory=Summary)
+    # TODO backwards compatibility
+    _data: Dict = field(factory=dict)
+
+    def __getitem__(self, key):
+        # TODO backwards compatibility
+        return self._data[key]
+
+    def __setitem__(self, key, value):
+        # TODO backwards compatibility
+        self._data[key] = value
 
     def __attrs_post_init__(self) -> None:
         if os.getenv("JOB_NAME") and os.getenv("BUILD_NUMBER"):
@@ -77,6 +87,8 @@ class TestRun:
             }
         if os.getenv("IBUTSU_ENV_ID"):
             self.metadata["env_id"] = os.getenv("IBUTSU_ENV_ID")
+        # TODO backwards compatibility
+        self["metadata"] = {}
 
     def start_timer(self) -> None:
         self._start_unix_time = time.time()
