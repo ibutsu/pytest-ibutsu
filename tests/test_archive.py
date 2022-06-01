@@ -96,9 +96,9 @@ def test_archive_content_results(archive, subtests, run_id):
     members = [m for m in archive.getmembers() if m.isfile() and "result.json" in m.name]
     assert len(members) == 7
     for member in members:
-        with subtests.test(name=member.name):
-            o = archive.extractfile(member)
-            result = json.load(o)
+        o = archive.extractfile(member)
+        result = json.load(o)
+        with subtests.test(name=result["test_id"]):
             assert "id" in result
             assert result["id"]
             assert "start_time" in result
@@ -133,4 +133,3 @@ def test_archive_artifacts(archive, subtests, artifact_name):
         with subtests.test(name=member.name):
             log = archive.extractfile(member)
             log.read() == bytes(f"{artifact_name}_{test_uuid}", "utf8")
-    members = [m for m in archive.getmembers() if m.isfile() and f"{artifact_name}.log" in m.name]

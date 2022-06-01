@@ -1,3 +1,4 @@
+import json
 import os
 import time
 import uuid
@@ -29,6 +30,13 @@ def safe_string(o):
         o = o.decode("utf-8", "ignore")
     o = o.encode("ascii", "xmlcharrefreplace").decode("ascii")
     return o
+
+
+def serialzer(obj):
+    if callable(obj) and hasattr(obj, "__code__"):
+        return f"function: '{obj.__name__}', args: {str(obj.__code__.co_varnames)}"
+    else:
+        return str(obj)
 
 
 @define
@@ -102,6 +110,7 @@ class TestRun:
         self.summary.collected = getattr(session, "testscollected", self.summary.tests)
 
     def to_dict(self) -> Dict:
+        self.metadata = json.loads(json.dumps(self.metadata, default=serialzer))
         return asdict(self, filter=lambda attr, _: not attr.name.startswith("_"))
 
     @staticmethod
@@ -171,6 +180,20 @@ class TestResult:
     start_time: str = ""
     duration: float = 0.0
     _artifacts: Dict[str, Union[bytes, str]] = field(factory=dict)
+    # TODO backwards compatibility
+    _data: Dict = field(factory=dict)
+
+    def __getitem__(self, key):
+        # TODO backwards compatibility
+        return self._data[key]
+
+    def __setitem__(self, key, value):
+        # TODO backwards compatibility
+        self._data[key] = value
+
+    def get(self, key: str, default=None):
+        # TODO backwards compatibility
+        return self._data.get(key, default)
 
     @staticmethod
     def _get_item_params(item: pytest.Item) -> Dict:
@@ -342,4 +365,5 @@ class TestResult:
         self._artifacts[name] = content
 
     def to_dict(self) -> Dict:
+        self.metadata = json.loads(json.dumps(self.metadata, default=serialzer))
         return asdict(self, filter=lambda attr, _: not attr.name.startswith("_"))

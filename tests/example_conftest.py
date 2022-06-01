@@ -1,6 +1,11 @@
 import pytest
 
 
+class TestType:
+    def __str__(self):
+        return "TestType"
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(session, items, config):
     """This hook is needed only to test legacy behavior.
@@ -32,11 +37,8 @@ def pytest_runtest_protocol(item):
 
 
 def pytest_runtest_setup(item):
-    """This hook is needed only to test legacy behavior.
-
-    It shouldn't blow up the tests if it's called.
-    """
     item._ibutsu["data"]["metadata"].update({"extra_data": "runtest_setup"})
+    item.ibutsu_result.metadata.update({"test_type": TestType()})
 
 
 def pytest_runtest_teardown(item):
