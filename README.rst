@@ -6,7 +6,8 @@ This is a plugin that will report test rests from pytest to an Ibutsu server.
 Requirements
 ------------
 
-Python 2.7 and 3.6+
+- Python 3.8+
+- pytest
 
 Installation
 ------------

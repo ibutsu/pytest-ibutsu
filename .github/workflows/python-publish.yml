@@ -21,11 +21,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install setuptools wheel twine
+        pip install hatch
     - name: Build and publish
       env:
-        TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
-        TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        HATCH_PYPI_USER: ${{ secrets.HATCH_PYPI_USER }}
+        HATCH_PYPI_AUTH: ${{ secrets.HATCH_PYPI_AUTH }}
       run: |
-        python setup.py sdist bdist_wheel
-        twine upload dist/*
+        hatch build
+        hatch publish
