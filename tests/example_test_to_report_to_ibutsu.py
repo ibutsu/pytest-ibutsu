@@ -1,9 +1,10 @@
-# -*- coding: utf-8 -*-
 import pytest
 
+pytest_plugins = "pytester"
 
-def test_help_message(testdir):
-    result = testdir.runpytest("--help")
+
+def test_help_message(pytester):
+    result = pytester.runpytest("--help")
     # fnmatch_lines does an assertion internally
     result.stdout.fnmatch_lines(["ibutsu:", "*--ibutsu=URL*URL for the Ibutsu server"])
 
@@ -28,3 +29,7 @@ def test_pass():
 
 def test_fail():
     pytest.fail("I don't like tests that pass")
+
+
+def test_exception():
+    raise Exception("Boom!")
