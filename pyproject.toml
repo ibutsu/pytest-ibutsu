@@ -1,0 +1,51 @@
+[build-system]
+requires = [
+    "hatchling>=1.3.1",
+    "hatch-vcs",
+]
+build-backend = "hatchling.build"
+
+[project]
+name = "pytest-ibutsu"
+description = "A plugin to sent pytest results to an Ibutsu server"
+readme = "README.rst"
+license = "MIT"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Pytest",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "certifi",
+    "ibutsu-client>=2.1",
+    "pytest",
+]
+dynamic = [
+    "version",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest-subtests",
+    "pytest-xdist",
+]
+
+[project.entry-points.pytest11]
+ibutsu = "pytest_ibutsu.pytest_plugin"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+]
