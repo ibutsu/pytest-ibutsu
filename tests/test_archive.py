@@ -36,17 +36,21 @@ def run_id():
     return str(uuid.uuid4())
 
 
-@pytest.fixture(params=PYTEST_ARGS)
-def result(pytester, request, run_id):
+def run_pytest(pytester, args):
     pytester.copy_example(CURRENT_DIR / "example_test_to_report_to_ibutsu.py")
     pytester.makeconftest((CURRENT_DIR / "example_conftest.py").read_text())
+    return pytester.runpytest(*args)
+
+
+@pytest.fixture(params=PYTEST_ARGS)
+def result(pytester, request, run_id):
     args = request.param + [
         "--ibutsu=archive",
         "--ibutsu-project=test_project",
         f"--ibutsu-run-id={run_id}",
         "example_test_to_report_to_ibutsu.py",
     ]
-    return pytester.runpytest(*args)
+    return run_pytest(pytester, args)
 
 
 def test_archive_file(pytester, result, run_id):
@@ -133,3 +137,23 @@ def test_archive_artifacts(archive, subtests, artifact_name):
         with subtests.test(name=member.name):
             log = archive.extractfile(member)
             log.read() == bytes(f"{artifact_name}_{test_uuid}", "utf8")
+
+
+@pytest.fixture
+def pytest_collect_only(run_id, pytester):
+    args = [
+        "--collect-only",
+        "--ibutsu=archive",
+        "--ibutsu-project=test_project",
+        f"--ibutsu-run-id={run_id}",
+        "example_test_to_report_to_ibutsu.py",
+    ]
+    return run_pytest(pytester, args)
+
+
+@pytest.mark.usefixtures("pytest_collect_only")
+def test_collect_only(pytester):
+    archives = 0
+    for path in pytester.path.glob("*"):
+        archives += 1 if re.match(ARCHIVE_REGEX, path.name) else 0
+    assert archives == 0, f"No archives should be created, got {archives}"
