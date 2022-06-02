@@ -30,8 +30,6 @@ jobs:
         with:
           python-version: "3.x"
       - name: Install dependencies
-        run: |
-          pip install -e .[dev]
+        run: pip install -e .[dev]
       - name: Test with pytest
-        run: |
-          pytest -v tests/
+        run: pytest -v tests/
