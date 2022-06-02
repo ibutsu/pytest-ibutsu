@@ -2,7 +2,7 @@ Ibutsu pytest plugin
 ====================
 
 This is a plugin that will report test rests from pytest to an
-`Ibutsu server <https://https://github.com/ibutsu/ibutsu-server>`_.
+`Ibutsu server <https://github.com/ibutsu/ibutsu-server>`_.
 
 Requirements
 ------------
