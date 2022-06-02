@@ -1,13 +1,15 @@
-Ibutsu pytest Plugin
+Ibutsu pytest plugin
 ====================
 
-This is a plugin that will report test rests from pytest to an Ibutsu server.
+This is a plugin that will report test rests from pytest to an
+`Ibutsu server <https://https://github.com/ibutsu/ibutsu-server>`_.
 
 Requirements
 ------------
 
 - Python 3.8+
 - pytest
+- attrs
 
 Installation
 ------------
@@ -20,7 +22,7 @@ If you're developing this plugin, you can create an editable installation::
 
     pip install -e .
 
-Getting Started
+Getting started
 ---------------
 
 To push your results to the Ibutsu server, use the ``--ibutsu`` option with the URL to your server::
@@ -36,7 +38,7 @@ the JWT token generated into this option::
 
     pytest --ibutsu http://ibutsu/ --ibutsu-token eyJhbGci.......CA1opEQ
 
-More Options
+More options
 ------------
 
 To set the source for the test results, use the ``--ibutsu-source`` option::
@@ -55,7 +57,7 @@ You can also specify sub-keys via dotted notation::
 
     pytest --ibutsu http://ibutsu/ --ibutsu-data key.subkey.susbsub=value
 
-Set Project
+Set project
 -----------
 
 If your Ibutsu server requires a project set, you can do that with the ``--ibutsu-project`` option::
@@ -66,7 +68,7 @@ You can also use the project ``name`` field::
 
     pytest --ibutsu http://ibutsu/ --ibutsu-project my-project
 
-Offline Usage
+Offline usage
 -------------
 
 If you want to still store your results, but can't upload immediately, the Ibutsu plugin can create
