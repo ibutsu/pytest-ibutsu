@@ -29,14 +29,14 @@ class UUIDAction(argparse.Action):
         setattr(namespace, self.dest, value)
 
 
-def is_xdist_worker(config) -> bool:
+def is_xdist_worker(config: pytest.Config) -> bool:
     """Return `True` if this is an xdist worker, `False` otherwise
     :param request_or_session: the `pytest` `request` or `session` object
     """
     return hasattr(config, "workerinput")
 
 
-def is_xdist_controller(config) -> bool:
+def is_xdist_controller(config: pytest.Config) -> bool:
     """Return `True` if this is the xdist controller, `False` otherwise
     Note: this method also returns `False` when distribution has not been
     activated at all.
@@ -84,10 +84,12 @@ class IbutsuPlugin:
         # TODO backwards compatibility
         self._data[key] = value
 
-    def upload_artifact_from_file(self, node_id, file_name, file_path):
+    def upload_artifact_from_file(self, test_uuid, file_name, file_path):
         # TODO backwards compatibility
-        test_result = self.results[node_id]
-        test_result.attach_artifact(file_name, file_path)
+        for test_result in self.results.values():
+            if test_result.id == test_uuid:
+                test_result.attach_artifact(file_name, file_path)
+                break
 
     # TODO backwards compatibility
     upload_artifact_raw = upload_artifact_from_file
@@ -112,7 +114,7 @@ class IbutsuPlugin:
         return data_dict
 
     @classmethod
-    def from_config(cls, config) -> "IbutsuPlugin":
+    def from_config(cls, config: pytest.Config) -> "IbutsuPlugin":
         ibutsu_server = config.getini("ibutsu_server") or config.getoption("ibutsu_server")
         ibutsu_token = config.getini("ibutsu_token") or config.getoption("ibutsu_token")
         ibutsu_source = config.getini("ibutsu_source") or config.getoption("ibutsu_source")
@@ -131,21 +133,26 @@ class IbutsuPlugin:
             enabled, ibutsu_server, ibutsu_token, ibutsu_source, ibutsu_project, extra_data, run
         )
 
-    @pytest.mark.tryfirst
-    def pytest_collection_modifyitems(self, items: List[pytest.Item]) -> None:
-        if not self.enabled:
-            return
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_collection_modifyitems(
+        self, session: pytest.Session, config: pytest.Config, items: List[pytest.Item]
+    ) -> None:
         for item in items:
             item.ibutsu_result = TestResult.from_item(item)
             # TODO backwards compatibility
             item._ibutsu = {
-                "id": item.nodeid,
+                "id": item.ibutsu_result.id,
                 "data": {"metadata": {}},
                 "artifacts": {},
             }
 
     def pytest_collection_finish(self, session: pytest.Session) -> None:
         if not self.enabled:
+            return
+        # we disable pytest-ibutsu here to avoid possible AttributeError in other
+        # pytest_collection_modifyitems hooks when "ibutsu_result" is called
+        if not session.items:
+            self.enabled = False
             return
         self.run.start_timer()
 
@@ -159,8 +166,8 @@ class IbutsuPlugin:
     def pytest_exception_interact(
         self,
         node: Union[pytest.Item, pytest.Collector],
-        call,
-        report,
+        call: pytest.CallInfo,
+        report: Union[pytest.CollectReport, pytest.TestReport],
     ) -> None:
         if not self.enabled:
             return
@@ -169,7 +176,7 @@ class IbutsuPlugin:
         test_result.set_metadata_short_tb(call, report)
         test_result.set_metadata_exception_name(call)
 
-    def pytest_runtest_logreport(self, report) -> None:
+    def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
         if not self.enabled or report.nodeid not in self.results:
             return
         test_result = self.results[report.nodeid]
@@ -224,7 +231,7 @@ class IbutsuPlugin:
         pluginmanager.add_hookspecs(newhooks)
 
 
-def pytest_addoption(parser) -> None:
+def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addini("ibutsu_server", help="The Ibutsu server to connect to")
     parser.addini("ibutsu_token", help="The JWT token to authenticate with the server")
     parser.addini("ibutsu_source", help="The source of the test run")
@@ -282,7 +289,7 @@ def pytest_addoption(parser) -> None:
     )
 
 
-def pytest_configure(config) -> None:
+def pytest_configure(config: pytest.Config) -> None:
     plugin = IbutsuPlugin.from_config(config)
     config.pluginmanager.register(plugin)
     config.ibutsu_plugin = plugin

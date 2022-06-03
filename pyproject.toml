@@ -16,7 +16,7 @@ classifiers = [
 dependencies = [
   "attrs",
   "ibutsu-client>=2.1",
-  "pytest",
+  "pytest>=7.1",
 ]
 description = "A plugin to sent pytest results to an Ibutsu server"
 dynamic = ["version"]
