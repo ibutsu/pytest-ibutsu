@@ -18,7 +18,9 @@ def pytest_collection_modifyitems(session, items, config):
 
 def pytest_exception_interact(node, call, report):
     node.config._ibutsu.upload_artifact_from_file(
-        node._ibutsu["id"], "legacy_exception.log", bytes(f"legacy_exception_{node.nodeid}", "utf8")
+        node._ibutsu["id"],
+        "legacy_exception.log",
+        bytes(f"legacy_exception_{node._ibutsu['id']}", "utf8"),
     )
     test_result = node.config.ibutsu_plugin.results[node.nodeid]
     test_result.attach_artifact(
@@ -26,7 +28,7 @@ def pytest_exception_interact(node, call, report):
     )
 
 
-@pytest.mark.hookwrapper
+@pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_protocol(item):
     yield
     item.config._ibutsu.upload_artifact_from_file(
