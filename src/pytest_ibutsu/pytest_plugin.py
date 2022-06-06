@@ -133,10 +133,10 @@ class IbutsuPlugin:
         self, session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
     ) -> None:
         for item in items:
-            item.ibutsu_result = TestResult.from_item(item)
+            item.stash[ibutsu_result_key] = TestResult.from_item(item)
             # TODO backwards compatibility
             item._ibutsu = {
-                "id": item.ibutsu_result.id,
+                "id": item.stash[ibutsu_result_key].id,
                 "data": {"metadata": {}},
                 "artifacts": {},
             }
@@ -154,8 +154,8 @@ class IbutsuPlugin:
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_protocol(self, item: pytest.Item) -> object | None:
         if self.enabled:
-            item.ibutsu_result.start_time = datetime.utcnow().isoformat()
-            self.results[item.nodeid] = item.ibutsu_result
+            item.stash[ibutsu_result_key].start_time = datetime.utcnow().isoformat()
+            self.results[item.nodeid] = item.stash[ibutsu_result_key]
         yield
 
     def pytest_exception_interact(
@@ -187,7 +187,7 @@ class IbutsuPlugin:
         # TODO backwards compatibility
         metadata = getattr(item, "_ibutsu", {}).get("data", {}).get("metadata", {})
         # TODO backwards compatibility
-        merge_dicts(metadata, item.ibutsu_result.metadata)
+        merge_dicts(metadata, item.stash[ibutsu_result_key].metadata)
 
     def pytest_runtest_logfinish(self, nodeid: str) -> None:
         if not self.enabled or nodeid not in self.results:
@@ -224,6 +224,10 @@ class IbutsuPlugin:
         from . import newhooks
 
         pluginmanager.add_hookspecs(newhooks)
+
+
+ibutsu_plugin_key = pytest.StashKey[IbutsuPlugin]()
+ibutsu_result_key = pytest.StashKey[TestResult]()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -287,6 +291,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def pytest_configure(config: pytest.Config) -> None:
     plugin = IbutsuPlugin.from_config(config)
     config.pluginmanager.register(plugin)
-    config.ibutsu_plugin = plugin
+    config.stash[ibutsu_plugin_key] = plugin
     # TODO backwards compatibility
     config._ibutsu = plugin

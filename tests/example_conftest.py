@@ -1,4 +1,6 @@
 import pytest
+from pytest_ibutsu.pytest_plugin import ibutsu_plugin_key
+from pytest_ibutsu.pytest_plugin import ibutsu_result_key
 
 
 class TestType:
@@ -22,7 +24,7 @@ def pytest_exception_interact(node, call, report):
         "legacy_exception.log",
         bytes(f"legacy_exception_{node._ibutsu['id']}", "utf8"),
     )
-    test_result = node.config.ibutsu_plugin.results[node.nodeid]
+    test_result = node.config.stash[ibutsu_plugin_key].results[node.nodeid]
     test_result.attach_artifact(
         "actual_exception.log", bytes(f"actual_exception_{test_result.id}", "utf8")
     )
@@ -34,20 +36,20 @@ def pytest_runtest_protocol(item):
     item.config._ibutsu.upload_artifact_from_file(
         item._ibutsu["id"],
         "runtest.log",
-        bytes(f"runtest_{item.ibutsu_result.id}", "utf8"),
+        bytes(f"runtest_{item.stash[ibutsu_result_key].id}", "utf8"),
     )
 
 
 def pytest_runtest_setup(item):
     item._ibutsu["data"]["metadata"].update({"extra_data": "runtest_setup"})
-    item.ibutsu_result.metadata.update({"test_type": TestType()})
+    item.stash[ibutsu_result_key].metadata.update({"test_type": TestType()})
 
 
 def pytest_runtest_teardown(item):
     item.config._ibutsu.upload_artifact_raw(
         item._ibutsu["id"],
         "runtest_teardown.log",
-        bytes(f"runtest_teardown_{item.ibutsu_result.id}", "utf-8"),
+        bytes(f"runtest_teardown_{item.stash[ibutsu_result_key].id}", "utf-8"),
     )
 
 
