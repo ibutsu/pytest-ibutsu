@@ -1,13 +1,11 @@
+from __future__ import annotations
+
 import argparse
 import os
 import pickle
 import re
 import uuid
 from datetime import datetime
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Union
 
 import pytest
 
@@ -30,9 +28,7 @@ class UUIDAction(argparse.Action):
 
 
 def is_xdist_worker(config: pytest.Config) -> bool:
-    """Return `True` if this is an xdist worker, `False` otherwise
-    :param request_or_session: the `pytest` `request` or `session` object
-    """
+    """Return `True` if this is an xdist worker, `False` otherwise"""
     return hasattr(config, "workerinput")
 
 
@@ -40,7 +36,6 @@ def is_xdist_controller(config: pytest.Config) -> bool:
     """Return `True` if this is the xdist controller, `False` otherwise
     Note: this method also returns `False` when distribution has not been
     activated at all.
-    :param request_or_session: the `pytest` `request` or `session` object
     """
     return not is_xdist_worker(config) and config.option.dist != "no"
 
@@ -58,10 +53,10 @@ class IbutsuPlugin:
         self,
         enabled: bool,
         ibutsu_server: str,
-        ibutsu_token: Optional[str],
+        ibutsu_token: str | None,
         ibutsu_source: str,
         ibutsu_project: str,
-        extra_data: Dict,
+        extra_data: dict,
         run: TestRun,
     ) -> None:
         self.ibutsu_server = ibutsu_server
@@ -71,8 +66,8 @@ class IbutsuPlugin:
         self.enabled = enabled
         self.extra_data = extra_data
         self.run = run
-        self.workers_runs: List[TestRun] = []
-        self.results: Dict[str, TestResult] = {}
+        self.workers_runs: list[TestRun] = []
+        self.results: dict[str, TestResult] = {}
         # TODO backwards compatibility
         self._data = {}  # type: ignore
 
@@ -114,7 +109,7 @@ class IbutsuPlugin:
         return data_dict
 
     @classmethod
-    def from_config(cls, config: pytest.Config) -> "IbutsuPlugin":
+    def from_config(cls, config: pytest.Config) -> IbutsuPlugin:
         ibutsu_server = config.getini("ibutsu_server") or config.getoption("ibutsu_server")
         ibutsu_token = config.getini("ibutsu_token") or config.getoption("ibutsu_token")
         ibutsu_source = config.getini("ibutsu_source") or config.getoption("ibutsu_source")
@@ -135,7 +130,7 @@ class IbutsuPlugin:
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_collection_modifyitems(
-        self, session: pytest.Session, config: pytest.Config, items: List[pytest.Item]
+        self, session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
     ) -> None:
         for item in items:
             item.ibutsu_result = TestResult.from_item(item)
@@ -157,7 +152,7 @@ class IbutsuPlugin:
         self.run.start_timer()
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_protocol(self, item: pytest.Item) -> Optional[object]:
+    def pytest_runtest_protocol(self, item: pytest.Item) -> object | None:
         if self.enabled:
             item.ibutsu_result.start_time = datetime.utcnow().isoformat()
             self.results[item.nodeid] = item.ibutsu_result
@@ -165,9 +160,9 @@ class IbutsuPlugin:
 
     def pytest_exception_interact(
         self,
-        node: Union[pytest.Item, pytest.Collector],
+        node: pytest.Item | pytest.Collector,
         call: pytest.CallInfo,
-        report: Union[pytest.CollectReport, pytest.TestReport],
+        report: pytest.CollectReport | pytest.TestReport,
     ) -> None:
         if not self.enabled:
             return
@@ -225,7 +220,7 @@ class IbutsuPlugin:
         dump_to_archive(self)
         send_data_to_ibutsu(self)
 
-    def pytest_addhooks(self, pluginmanager) -> None:
+    def pytest_addhooks(self, pluginmanager: pytest.PytestPluginManager) -> None:
         from . import newhooks
 
         pluginmanager.add_hookspecs(newhooks)

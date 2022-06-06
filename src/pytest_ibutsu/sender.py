@@ -1,13 +1,11 @@
+from __future__ import annotations
+
 import os
 from http.client import BadStatusLine
 from http.client import RemoteDisconnected
 from io import BufferedReader
 from io import BytesIO
-from typing import List
-from typing import Optional
-from typing import Tuple
 from typing import TYPE_CHECKING
-from typing import Union
 
 from ibutsu_client import ApiClient
 from ibutsu_client import ApiException
@@ -42,9 +40,9 @@ class TooManyRetriesError(Exception):
 
 
 class IbutsuSender:
-    def __init__(self, server_url: str, token: Optional[str] = None):
+    def __init__(self, server_url: str, token: str | None = None):
         self._has_server_error = False
-        self._server_error_tbs: List[str] = []
+        self._server_error_tbs: list[str] = []
         self._sender_cache = []  # type: ignore
         config = Configuration(access_token=token, host=server_url)
         # Only set the SSL CA cert if one of the environment variables is set
@@ -58,7 +56,7 @@ class IbutsuSender:
         self.health_api = HealthApi(api_client)
 
     @classmethod
-    def from_ibutsu_plugin(cls, ibutsu: "IbutsuPlugin") -> "IbutsuSender":
+    def from_ibutsu_plugin(cls, ibutsu: IbutsuPlugin) -> IbutsuSender:
         print(f"Ibutsu server: {ibutsu.ibutsu_server}")
         ibutsu_server = ibutsu.ibutsu_server
         if ibutsu.ibutsu_server.endswith("/"):
@@ -92,7 +90,7 @@ class IbutsuSender:
             return None
 
     @staticmethod
-    def _get_buffered_reader(data: Union[bytes, str], filename: str) -> Tuple[BufferedReader, int]:
+    def _get_buffered_reader(data: bytes | str, filename: str) -> tuple[BufferedReader, int]:
         if isinstance(data, bytes):
             io_bytes = BytesIO(data)
             io_bytes.name = filename
@@ -127,7 +125,7 @@ class IbutsuSender:
         buffered_reader.close()
 
 
-def send_data_to_ibutsu(ibutsu_plugin: "IbutsuPlugin") -> None:
+def send_data_to_ibutsu(ibutsu_plugin: IbutsuPlugin) -> None:
     sender = IbutsuSender.from_ibutsu_plugin(ibutsu_plugin)
     sender.add_run(ibutsu_plugin.run)
     for result in ibutsu_plugin.results.values():

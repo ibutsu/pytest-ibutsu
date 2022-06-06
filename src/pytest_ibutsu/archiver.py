@@ -1,10 +1,11 @@
+from __future__ import annotations
+
 import json
 import tarfile
 import time
 from contextlib import AbstractContextManager
 from io import BytesIO
 from typing import TYPE_CHECKING
-from typing import Union
 
 if TYPE_CHECKING:
     from .pytest_plugin import IbutsuPlugin
@@ -33,7 +34,7 @@ class IbutsuArchiver(AbstractContextManager):
         self.tar.addfile(tar_info, fileobj=BytesIO(content))
 
     @staticmethod
-    def _get_bytes(value: Union[bytes, str]) -> bytes:
+    def _get_bytes(value: bytes | str) -> bytes:
         if isinstance(value, bytes):
             return value
         with open(value, "rb") as f:
@@ -52,7 +53,7 @@ class IbutsuArchiver(AbstractContextManager):
         content = bytes(json.dumps(run.to_dict()), "utf-8")
         self.add_file("run.json", content)
 
-    def __enter__(self) -> "IbutsuArchiver":
+    def __enter__(self) -> IbutsuArchiver:
         self.tar = tarfile.open(f"{self.name}.tar.gz", "w:gz")
         return self
 
@@ -60,7 +61,7 @@ class IbutsuArchiver(AbstractContextManager):
         self.tar.close()
 
 
-def dump_to_archive(ibutsu_plugin: "IbutsuPlugin") -> None:
+def dump_to_archive(ibutsu_plugin: IbutsuPlugin) -> None:
     with IbutsuArchiver(ibutsu_plugin.run.id) as ibutsu_archiver:
         ibutsu_archiver.add_run(ibutsu_plugin.run)
         for result in ibutsu_plugin.results.values():
