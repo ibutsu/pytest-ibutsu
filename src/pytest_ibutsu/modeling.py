@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 from typing import ClassVar
 
+import cattrs
 import pytest
 from attrs import asdict
 from attrs import Attribute
@@ -122,7 +123,6 @@ class TestRun:
     @staticmethod
     def combine_summaries(runs: list[TestRun]) -> Summary:
         summary = Summary()
-        summary.collected = runs[0].summary.collected
         for run in runs:
             summary.failures += run.summary.failures
             summary.errors += run.summary.errors
@@ -131,6 +131,7 @@ class TestRun:
             summary.skips += run.summary.skips
             summary.tests += run.summary.tests
             summary.not_run += run.summary.not_run
+            summary.collected += run.summary.collected
         return summary
 
     @staticmethod
@@ -160,6 +161,10 @@ class TestRun:
             duration=cls.get_duration(runs),
             summary=cls.combine_summaries(runs),
         )  # type: ignore
+
+    @classmethod
+    def from_json(cls, run_json: dict) -> TestRun:
+        return cattrs.structure(run_json, cls)
 
 
 @define
@@ -257,6 +262,10 @@ class TestResult:
                 **item.config.stash[ibutsu_plugin_key].run.metadata,
             },
         )  # type: ignore
+
+    @classmethod
+    def from_json(cls, result_json: dict) -> TestRun:
+        return cattrs.structure(result_json, cls)
 
     def _get_xfail_reason(self, report: pytest.TestReport) -> str | None:
         xfail_reason = None

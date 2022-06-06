@@ -98,11 +98,14 @@ class IbutsuSender:
             return payload, len(data)
         return open(data, "rb"), os.stat(data).st_size
 
-    def add_run(self, run: TestRun):
-        self._make_call(self.run_api.add_run, run=run.to_dict())
-        # Ibutsu server awkwardness. If we don't update run with the same data it will be
-        # incomplete.
-        self._make_call(self.run_api.update_run, run.id, run=run.to_dict())
+    def add_or_update_run(self, run: TestRun):
+        if self.does_run_exist(run):
+            self._make_call(self.run_api.update_run, id=run.id, run=run.to_dict())
+        else:
+            self._make_call(self.run_api.add_run, run=run.to_dict())
+
+    def does_run_exist(self, run: TestRun) -> bool:
+        return bool(self._make_call(self.run_api.get_run, id=run.id))
 
     def add_result(self, result: TestResult):
         self._make_call(self.result_api.add_result, result=result.to_dict())
@@ -130,7 +133,7 @@ class IbutsuSender:
 
 def send_data_to_ibutsu(ibutsu_plugin: IbutsuPlugin) -> None:
     sender = IbutsuSender.from_ibutsu_plugin(ibutsu_plugin)
-    sender.add_run(ibutsu_plugin.run)
+    sender.add_or_update_run(ibutsu_plugin.run)
     for result in ibutsu_plugin.results.values():
         sender.add_result(result)
     if not sender._has_server_error:

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pickle
 import re
+import tarfile
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -16,7 +19,7 @@ from .sender import send_data_to_ibutsu
 
 
 UUID_REGEX = re.compile(
-    r"^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}$"
+    r"[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}"
 )
 
 
@@ -129,6 +132,27 @@ class IbutsuPlugin:
             enabled, ibutsu_server, ibutsu_token, ibutsu_source, ibutsu_project, extra_data, run
         )
 
+    def load_archive(self):
+        if not Path(f"{self.run.id}.tar.gz").exists():
+            return
+        cur_results = {result.test_id: result for result in self.results.values()}
+        with tarfile.open(f"{self.run.id}.tar.gz", "r:gz") as ibutsu_archive:
+            run_json = json.load(ibutsu_archive.extractfile(f"{self.run.id}/run.json"))
+            prior_run = TestRun.from_json(run_json)
+            for name in ibutsu_archive.getnames():
+                if re.match(f"{self.run.id}/{UUID_REGEX.pattern}/result.json", name):
+                    result_json = json.load(ibutsu_archive.extractfile(name))
+                    result = TestResult.from_json(result_json)
+                    if result.test_id in cur_results:
+                        cur_result_uuid = cur_results[result.test_id].id
+                        del self.results[cur_result_uuid]
+                    self.results[result.id] = result
+                    continue
+                if match := re.match(f"{self.run.id}/({UUID_REGEX.pattern})/.+", name):
+                    result = self.results[match.groups()[0]]
+                    result.attach_artifact(Path(name).name, ibutsu_archive.extractfile(name).read())
+        self.run = TestRun.from_test_runs([self.run, prior_run])
+
     @pytest.hookimpl(tryfirst=True)
     def pytest_collection_modifyitems(
         self, session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
@@ -216,7 +240,6 @@ class IbutsuPlugin:
             and not all(self.workers_enabled)
         ):
             return
-        self.run.set_summary_collected(session)
         self.run.set_duration()
         # TODO backwards compatibility
         merge_dicts(self.run["metadata"], self.run.metadata)
@@ -226,9 +249,12 @@ class IbutsuPlugin:
             return
         if is_xdist_controller(session.config):
             self.run = TestRun.from_test_runs(self.workers_runs)
+        self.run.set_summary_collected(session)
+        self.load_archive()
         session.config.hook.pytest_ibutsu_before_shutdown(config=session.config, ibutsu=self)
         dump_to_archive(self)
-        send_data_to_ibutsu(self)
+        if self.ibutsu_server != "archive":
+            send_data_to_ibutsu(self)
 
     def pytest_addhooks(self, pluginmanager: pytest.PytestPluginManager) -> None:
         from . import newhooks

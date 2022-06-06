@@ -19,10 +19,12 @@ def test_mark_skipif():
     pass
 
 
+@pytest.mark.some_marker
 def test_skip():
     pytest.skip("I really don't like this test, but I had to think about it first.")
 
 
+@pytest.mark.some_marker
 def test_pass():
     pass
 
@@ -31,5 +33,6 @@ def test_fail():
     pytest.fail("I don't like tests that pass")
 
 
+@pytest.mark.some_marker
 def test_exception():
     raise Exception("Boom!")
