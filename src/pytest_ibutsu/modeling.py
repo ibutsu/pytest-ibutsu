@@ -1,13 +1,11 @@
+from __future__ import annotations
+
 import json
 import os
 import time
 import uuid
 from datetime import datetime
 from typing import ClassVar
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Union
 
 import pytest
 from attrs import asdict
@@ -50,7 +48,7 @@ class Summary:
     collected: int = 0
     not_run: int = 0
 
-    def increment(self, test_result: "TestResult") -> None:
+    def increment(self, test_result: TestResult) -> None:
         attr = {
             "failed": "failures",
             "error": "errors",
@@ -66,17 +64,17 @@ class Summary:
 
 @define
 class TestRun:
-    component: Optional[str] = None
-    env: Optional[str] = None
+    component: str | None = None
+    env: str | None = None
     id: str = field(factory=lambda: str(uuid.uuid4()))
-    metadata: Dict = field(factory=dict)
-    source: Optional[str] = None
+    metadata: dict = field(factory=dict)
+    source: str | None = None
     start_time: str = ""
     duration: float = 0.0
     _start_unix_time: float = field(init=False, default=0.0)
     summary: Summary = field(factory=Summary)
     # TODO backwards compatibility
-    _data: Dict = field(factory=dict)
+    _data: dict = field(factory=dict)
 
     def __getitem__(self, key):
         # TODO backwards compatibility
@@ -109,12 +107,12 @@ class TestRun:
     def set_summary_collected(self, session: pytest.Session) -> None:
         self.summary.collected = getattr(session, "testscollected", self.summary.tests)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         self.metadata = json.loads(json.dumps(self.metadata, default=serialzer))
         return asdict(self, filter=lambda attr, _: not attr.name.startswith("_"))
 
     @staticmethod
-    def combine_summaries(runs: List["TestRun"]) -> Summary:
+    def combine_summaries(runs: list[TestRun]) -> Summary:
         summary = Summary()
         summary.collected = runs[0].summary.collected
         for run in runs:
@@ -128,22 +126,22 @@ class TestRun:
         return summary
 
     @staticmethod
-    def get_start_time(runs: List["TestRun"]) -> str:
+    def get_start_time(runs: list[TestRun]) -> str:
         return min(runs, key=lambda run: run.start_time).start_time
 
     @staticmethod
-    def get_duration(runs: List["TestRun"]) -> float:
+    def get_duration(runs: list[TestRun]) -> float:
         return max(runs, key=lambda run: run.duration).duration
 
     @staticmethod
-    def get_metadata(runs: List["TestRun"]) -> Dict:
+    def get_metadata(runs: list[TestRun]) -> dict:
         metadata = {}
         for run in runs:
             metadata.update(run.metadata)
         return metadata
 
     @classmethod
-    def from_test_runs(cls, runs: List["TestRun"]) -> "TestRun":
+    def from_test_runs(cls, runs: list[TestRun]) -> TestRun:
         return TestRun(
             component=runs[0].component,
             env=runs[0].env,
@@ -158,9 +156,9 @@ class TestRun:
 
 @define
 class TestResult:
-    FILTERED_MARKERS: ClassVar[List[str]] = ["parametrize"]
+    FILTERED_MARKERS: ClassVar[list[str]] = ["parametrize"]
     # Convert the blocker category into an Ibutsu Classification
-    BLOCKER_CATEGORY_TO_CLASSIFICATION: ClassVar[Dict[str, str]] = {
+    BLOCKER_CATEGORY_TO_CLASSIFICATION: ClassVar[dict[str, str]] = {
         "needs-triage": "needs_triage",
         "automation-issue": "test_failure",
         "environment-issue": "environment_failure",
@@ -169,19 +167,19 @@ class TestResult:
     }
 
     test_id: str
-    component: Optional[str] = None
-    env: Optional[str] = None
+    component: str | None = None
+    env: str | None = None
     result: str = "passed"
     id: str = field(factory=lambda: str(uuid.uuid4()))
-    metadata: Dict = field(factory=dict)
-    params: Dict = field(factory=dict)
-    run_id: Optional[str] = None
+    metadata: dict = field(factory=dict)
+    params: dict = field(factory=dict)
+    run_id: str | None = None
     source: str = "local"
     start_time: str = ""
     duration: float = 0.0
-    _artifacts: Dict[str, Union[bytes, str]] = field(factory=dict)
+    _artifacts: dict[str, bytes | str] = field(factory=dict)
     # TODO backwards compatibility
-    _data: Dict = field(factory=dict)
+    _data: dict = field(factory=dict)
 
     def __getitem__(self, key):
         # TODO backwards compatibility
@@ -196,7 +194,7 @@ class TestResult:
         return self._data.get(key, default)
 
     @staticmethod
-    def _get_item_params(item: pytest.Item) -> Dict:
+    def _get_item_params(item: pytest.Item) -> dict:
         def get_name(obj):
             return getattr(obj, "_param_name", None) or getattr(obj, "name", None) or str(obj)
 
@@ -215,7 +213,7 @@ class TestResult:
         return fspath
 
     @staticmethod
-    def _get_item_markers(item: pytest.Item) -> List[Dict[str, str]]:
+    def _get_item_markers(item: pytest.Item) -> list[dict[str, str]]:
         return [
             {"name": m.name, "args": m.args, "kwargs": m.kwargs}
             for m in item.iter_markers()
@@ -233,7 +231,7 @@ class TestResult:
                 return item.name
 
     @classmethod
-    def from_item(cls, item: pytest.Item) -> "TestResult":
+    def from_item(cls, item: pytest.Item) -> TestResult:
         return cls(
             test_id=cls._get_test_idents(item),
             params=cls._get_item_params(item),
@@ -250,7 +248,7 @@ class TestResult:
             },
         )  # type: ignore
 
-    def _get_xfail_reason(self, report) -> Optional[str]:
+    def _get_xfail_reason(self, report: pytest.TestReport) -> str | None:
         xfail_reason = None
         if self.metadata.get("markers"):
             for marker in self.metadata["markers"]:
@@ -260,7 +258,7 @@ class TestResult:
             xfail_reason = report.wasxfail.split("reason: ")[1]
         return xfail_reason
 
-    def _get_skip_reason(self, report) -> Optional[str]:
+    def _get_skip_reason(self, report: pytest.TestReport) -> str | None:
         skip_reason = None
         # first see if the reason is in the marker skip
         if self.metadata.get("markers"):
@@ -281,7 +279,7 @@ class TestResult:
                 pass
         return skip_reason
 
-    def set_metadata_reason(self, report) -> None:
+    def set_metadata_reason(self, report: pytest.TestReport) -> None:
         if self.result == "skipped" and not self.metadata.get("skip_reason"):
             reason = self._get_skip_reason(report)
             if reason:
@@ -291,18 +289,18 @@ class TestResult:
             if reason:
                 self.metadata["xfail_reason"] = reason
 
-    def set_metadata_statuses(self, report) -> None:
+    def set_metadata_statuses(self, report: pytest.TestReport) -> None:
         xfail = hasattr(report, "wasxfail")
         self.metadata["statuses"][report.when] = (report.outcome, xfail)
 
-    def set_metadata_durations(self, report) -> None:
+    def set_metadata_durations(self, report: pytest.TestReport) -> None:
         self.metadata["durations"][report.when] = report.duration
 
-    def set_metadata_user_properties(self, report) -> None:
+    def set_metadata_user_properties(self, report: pytest.TestReport) -> None:
         self.metadata["user_properties"] = dict(report.user_properties)
 
     @staticmethod
-    def _get_classification(reason: str) -> Optional[str]:
+    def _get_classification(reason: str) -> str | None:
         """Get the skip/xfail classification and category from the reason"""
         try:
             category = reason.split("category:")[1].strip()
@@ -348,8 +346,8 @@ class TestResult:
 
     def set_metadata_short_tb(
         self,
-        call,
-        report,
+        call: pytest.CallInfo,
+        report: pytest.TestReport,
     ) -> None:
         val = safe_string(call.excinfo.value)
         last_lines = "\n".join(report.longreprtext.split("\n")[-4:])
@@ -358,12 +356,12 @@ class TestResult:
         )
         self.metadata["short_tb"] = short_tb
 
-    def set_metadata_exception_name(self, call) -> None:
+    def set_metadata_exception_name(self, call: pytest.CallInfo) -> None:
         self.metadata["exception_name"] = call.excinfo.type.__name__
 
-    def attach_artifact(self, name: str, content: Union[bytes, str]) -> None:
+    def attach_artifact(self, name: str, content: bytes | str) -> None:
         self._artifacts[name] = content
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         self.metadata = json.loads(json.dumps(self.metadata, default=serialzer))
         return asdict(self, filter=lambda attr, _: not attr.name.startswith("_"))
