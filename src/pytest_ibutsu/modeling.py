@@ -232,19 +232,21 @@ class TestResult:
 
     @classmethod
     def from_item(cls, item: pytest.Item) -> TestResult:
+        from .pytest_plugin import ibutsu_plugin_key
+
         return cls(
             test_id=cls._get_test_idents(item),
             params=cls._get_item_params(item),
-            source=item.config.ibutsu_plugin.ibutsu_source,
-            run_id=item.config.ibutsu_plugin.run.id,
+            source=item.config.stash[ibutsu_plugin_key].ibutsu_source,
+            run_id=item.config.stash[ibutsu_plugin_key].run.id,
             metadata={
                 "statuses": {},
-                "run": item.config.ibutsu_plugin.run.id,
+                "run": item.config.stash[ibutsu_plugin_key].run.id,
                 "durations": {},
                 "fspath": cls._get_item_fspath(item),
                 "markers": cls._get_item_markers(item),
-                "project": item.config.ibutsu_plugin.ibutsu_project,
-                **item.config.ibutsu_plugin.run.metadata,
+                "project": item.config.stash[ibutsu_plugin_key].ibutsu_project,
+                **item.config.stash[ibutsu_plugin_key].run.metadata,
             },
         )  # type: ignore
 
