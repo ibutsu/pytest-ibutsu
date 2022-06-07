@@ -67,6 +67,7 @@ class IbutsuPlugin:
         self.extra_data = extra_data
         self.run = run
         self.workers_runs: list[TestRun] = []
+        self.workers_enabled: list[bool] = []
         self.results: dict[str, TestResult] = {}
         # TODO backwards compatibility
         self._data = {}  # type: ignore
@@ -200,11 +201,20 @@ class IbutsuPlugin:
 
     @pytest.hookimpl(optionalhook=True)
     def pytest_testnodedown(self, node) -> None:
+        if not self.enabled or not node.workeroutput["ibutsu_enabled"]:
+            self.workers_enabled.append(False)
+            return
         self.workers_runs.append(pickle.loads(node.workeroutput["run"]))
         self.results.update(pickle.loads(node.workeroutput["results"]))
 
     def pytest_sessionfinish(self, session: pytest.Session) -> None:
-        if not self.enabled:
+        if is_xdist_worker(session.config):
+            session.config.workeroutput["ibutsu_enabled"] = self.enabled
+        if (
+            not self.enabled
+            or is_xdist_controller(session.config)
+            and not all(self.workers_enabled)
+        ):
             return
         self.run.set_summary_collected(session)
         self.run.set_duration()
