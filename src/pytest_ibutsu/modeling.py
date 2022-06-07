@@ -5,36 +5,41 @@ import os
 import time
 import uuid
 from datetime import datetime
+from typing import Any
 from typing import ClassVar
 
 import pytest
 from attrs import asdict
+from attrs import Attribute
 from attrs import define
 from attrs import field
 
 
-def safe_string(o):
+def _safe_string(obj):
     """This will make string out of ANYTHING without having to worry about the stupid Unicode errors
 
-    This function tries to make str/unicode out of ``o`` unless it already is one of those and then
-    it processes it so in the end there is a harmless ascii string.
-
-    Args:
-        o: Anything.
+    This function tries to make str/unicode out of ``obj`` unless it already is one of those and
+    then it processes it so in the end there is a harmless ascii string.
     """
-    if not isinstance(o, str):
-        o = str(o)
-    if isinstance(o, bytes):
-        o = o.decode("utf-8", "ignore")
-    o = o.encode("ascii", "xmlcharrefreplace").decode("ascii")
-    return o
+    if not isinstance(obj, str):
+        obj = str(obj)
+    if isinstance(obj, bytes):
+        obj = obj.decode("utf-8", "ignore")
+    return obj.encode("ascii", "xmlcharrefreplace").decode("ascii")
 
 
-def serialzer(obj):
+def _json_serializer(obj):
     if callable(obj) and hasattr(obj, "__code__"):
         return f"function: '{obj.__name__}', args: {str(obj.__code__.co_varnames)}"
     else:
         return str(obj)
+
+
+def _serializer(inst: type, field: Attribute, value: Any) -> Any:
+    if field and field.name == "metadata":
+        return json.loads(json.dumps(value, default=_json_serializer))
+    else:
+        return value
 
 
 @define
@@ -108,8 +113,11 @@ class TestRun:
         self.summary.collected = getattr(session, "testscollected", self.summary.tests)
 
     def to_dict(self) -> dict:
-        self.metadata = json.loads(json.dumps(self.metadata, default=serialzer))
-        return asdict(self, filter=lambda attr, _: not attr.name.startswith("_"))
+        return asdict(
+            self,
+            filter=lambda attr, _: not attr.name.startswith("_"),
+            value_serializer=_serializer,
+        )
 
     @staticmethod
     def combine_summaries(runs: list[TestRun]) -> Summary:
@@ -351,7 +359,7 @@ class TestResult:
         call: pytest.CallInfo,
         report: pytest.TestReport,
     ) -> None:
-        val = safe_string(call.excinfo.value)
+        val = _safe_string(call.excinfo.value)
         last_lines = "\n".join(report.longreprtext.split("\n")[-4:])
         short_tb = "{}\n{}\n{}".format(
             last_lines, call.excinfo.type.__name__, val.encode("ascii", "xmlcharrefreplace")
@@ -365,5 +373,8 @@ class TestResult:
         self._artifacts[name] = content
 
     def to_dict(self) -> dict:
-        self.metadata = json.loads(json.dumps(self.metadata, default=serialzer))
-        return asdict(self, filter=lambda attr, _: not attr.name.startswith("_"))
+        return asdict(
+            self,
+            filter=lambda attr, _: not attr.name.startswith("_"),
+            value_serializer=_serializer,
+        )
