@@ -100,6 +100,9 @@ class IbutsuSender:
 
     def add_run(self, run: TestRun):
         self._make_call(self.run_api.add_run, run=run.to_dict())
+        # Ibutsu server awkwardness. If we don't update run with the same data it will be
+        # incomplete.
+        self._make_call(self.run_api.update_run, run.id, run=run.to_dict())
 
     def add_result(self, result: TestResult):
         self._make_call(self.result_api.add_result, result=result.to_dict())
