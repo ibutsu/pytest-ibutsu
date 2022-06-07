@@ -147,13 +147,15 @@ def test_archive_artifacts(archive: tarfile.TarFile, subtests, artifact_name: st
 
 PYTEST_COLLECT_ARGS = [
     pytest.param(
-        [
-            "--collect-only",
-            "example_test_to_report_to_ibutsu.py",
-        ],
-        id="collect-only",
+        ["--collect-only", "example_test_to_report_to_ibutsu.py"],
+        id="no-xdist-collect-only",
     ),
-    pytest.param(["-k", "test_that_doesnt_exist"], id="nothing-collected"),
+    pytest.param(
+        ["--collect-only", "example_test_to_report_to_ibutsu.py", "-n", "2"],
+        id="xdist-collect-only",
+    ),
+    pytest.param(["-k", "test_that_doesnt_exist"], id="no-xdist-nothing-collected"),
+    pytest.param(["-k", "test_that_doesnt_exist", "-n", "2"], id="xdist-nothing-collected"),
 ]
 
 
