@@ -264,7 +264,7 @@ class TestResult:
         )  # type: ignore
 
     @classmethod
-    def from_json(cls, result_json: dict) -> TestRun:
+    def from_json(cls, result_json: dict) -> TestResult:
         return cattrs.structure(result_json, cls)
 
     def _get_xfail_reason(self, report: pytest.TestReport) -> str | None:
