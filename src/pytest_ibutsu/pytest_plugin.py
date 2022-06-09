@@ -132,25 +132,24 @@ class IbutsuPlugin:
             enabled, ibutsu_server, ibutsu_token, ibutsu_source, ibutsu_project, extra_data, run
         )
 
-    def load_archive(self):
+    def load_archive(self) -> None:
+        """Load data from an ibutsu archive."""
         if not Path(f"{self.run.id}.tar.gz").exists():
             return
-        cur_results = {result.test_id: result for result in self.results.values()}
-        with tarfile.open(f"{self.run.id}.tar.gz", "r:gz") as ibutsu_archive:
-            run_json = json.load(ibutsu_archive.extractfile(f"{self.run.id}/run.json"))
+        with tarfile.open(f"{self.run.id}.tar.gz", "r:gz") as archive:
+            run_json = json.load(archive.extractfile(f"{self.run.id}/run.json"))  # type: ignore
             prior_run = TestRun.from_json(run_json)
-            for name in ibutsu_archive.getnames():
-                if re.match(f"{self.run.id}/{UUID_REGEX.pattern}/result.json", name):
-                    result_json = json.load(ibutsu_archive.extractfile(name))
+            # we assume here that files are in the specific order
+            for name in archive.getnames():
+                if name.endswith("/result.json"):
+                    result_json = json.load(archive.extractfile(name))  # type: ignore
                     result = TestResult.from_json(result_json)
-                    if result.test_id in cur_results:
-                        cur_result_uuid = cur_results[result.test_id].id
-                        del self.results[cur_result_uuid]
-                    self.results[result.id] = result
+                    # keep only the latest result
+                    self.results[result.test_id] = result
                     continue
-                if match := re.match(f"{self.run.id}/({UUID_REGEX.pattern})/.+", name):
-                    result = self.results[match.groups()[0]]
-                    result.attach_artifact(Path(name).name, ibutsu_archive.extractfile(name).read())
+                if re.match(f"{self.run.id}/({UUID_REGEX.pattern})/.+", name):
+                    artifact = archive.extractfile(name).read()  # type: ignore
+                    result.attach_artifact(Path(name).name, artifact)
         self.run = TestRun.from_test_runs([self.run, prior_run])
 
     @pytest.hookimpl(tryfirst=True)
