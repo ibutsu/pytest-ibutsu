@@ -87,7 +87,7 @@ def test_archive_content_run(archive: tarfile.TarFile, run_id: str):
     members = archive.getmembers()
     assert members[0].isdir(), "root dir is missing"
     assert members[1].isfile(), "run.json is missing"
-    assert members[1].name == "run.json"
+    assert members[1].name == f"{run_id}/run.json"
     o = archive.extractfile(members[1])
     loaded = json.load(o)  # type: ignore
     assert loaded["id"] == run_id
@@ -177,3 +177,75 @@ def test_collect(pytester: pytest.Pytester, pytest_collect_test: pytest.RunResul
     for path in pytester.path.glob("*"):
         archives += 1 if re.match(ARCHIVE_REGEX, path.name) else 0
     assert archives == 0, f"No archives should be created, got {archives}"
+
+
+@pytest.fixture(params=PYTEST_XDIST_ARGS)
+def pytest_run_twice(
+    run_id: str, pytester: pytest.Pytester, request: pytest.FixtureRequest
+) -> pytest.RunResult:
+    args = request.param + [
+        "--ibutsu=archive",
+        "--ibutsu-project=test_project",
+        f"--ibutsu-run-id={run_id}",
+        "example_test_to_report_to_ibutsu.py",
+        "-m",
+    ]
+    run_pytest(pytester, args + ["not some_marker"])
+    run_pytest(pytester, args + ["some_marker"])
+
+
+@pytest.mark.usefixtures("pytest_run_twice")
+def test_archives_count_after_two_runs(pytester: pytest.Pytester):
+    archives = 0
+    for path in pytester.path.glob("*"):
+        archives += 1 if re.match(ARCHIVE_REGEX, path.name) else 0
+    assert archives == 1, f"Expected exactly one archive file, got {archives}"
+
+
+@pytest.fixture
+def archive_after_two_runs(
+    pytest_run_twice, pytester: pytest.Pytester, run_id: str
+) -> Iterator[tarfile.TarFile]:
+    archive_name = f"{run_id}.tar.gz"
+    archive_path = pytester.path.joinpath(archive_name)
+    with tarfile.open(archive_path, "r:gz") as tar:
+        yield tar
+
+
+def test_archive_content_run_after_two_runs(archive_after_two_runs: tarfile.TarFile, run_id):
+    o = archive_after_two_runs.extractfile(f"{run_id}/run.json")
+    loaded = json.load(o)  # type: ignore
+    assert loaded["id"] == run_id
+    assert "start_time" in loaded
+    assert loaded["start_time"]
+    assert "duration" in loaded
+    assert loaded["duration"]
+    # remove fields that vary
+    del loaded["id"]
+    del loaded["start_time"]
+    del loaded["duration"]
+    assert loaded == expected_results.RUN
+
+
+def test_archive_content_results_after_two_runs(
+    archive_after_two_runs: tarfile.TarFile, subtests, run_id: str
+):
+    members = [
+        m for m in archive_after_two_runs.getmembers() if m.isfile() and "result.json" in m.name
+    ]
+    assert len(members) == 7
+    for member in members:
+        o = archive_after_two_runs.extractfile(member)
+        result = json.load(o)  # type: ignore
+        with subtests.test(name=result["test_id"]):
+            assert "id" in result
+            assert result["id"]
+            assert "start_time" in result
+            assert result["start_time"]
+            assert "duration" in result
+            assert result["duration"]
+            assert "run_id" in result
+            assert result["run_id"] == run_id
+            result = remove_varying_fields_from_result(result)
+            expected_result = expected_results.RESULTS[result["test_id"]]
+            assert result == expected_result

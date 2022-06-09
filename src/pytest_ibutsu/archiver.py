@@ -51,7 +51,7 @@ class IbutsuArchiver(AbstractContextManager):
     def add_run(self, run: TestRun) -> None:
         self.add_dir(run.id)
         content = bytes(json.dumps(run.to_dict()), "utf-8")
-        self.add_file("run.json", content)
+        self.add_file(f"{run.id}/run.json", content)
 
     def __enter__(self) -> IbutsuArchiver:
         self.tar = tarfile.open(f"{self.name}.tar.gz", "w:gz")

@@ -57,6 +57,15 @@ You can also specify sub-keys via dotted notation::
 
     pytest --ibutsu http://ibutsu/ --ibutsu-data key.subkey.susbsub=value
 
+If you need to accumulate data from multiple ``pytest`` sessions, you should provide the same UUID
+into ``ibutsu-run-id`` option::
+
+    pytest --ibutsu-run-id=<UUID string>
+
+    pytest --ibutsu-run-id=<the same UUID string>
+
+The archive will be rebuilt and the data on the Ibutsu server will be updated.
+
 Set project
 -----------
 
