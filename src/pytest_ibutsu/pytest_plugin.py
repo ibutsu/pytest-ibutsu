@@ -121,6 +121,11 @@ class IbutsuPlugin:
             or config.getoption("ibutsu_project")
         )
         run_id = config.getini("ibutsu_run_id") or config.getoption("ibutsu_run_id")
+        if ibutsu_server and not ibutsu_project:
+            raise pytest.UsageError(
+                "Ibutsu project is required, use --ibutsu-project, "
+                "-o ibutsu_project or the IBUTSU_PROJECT environment variable"
+            )
         run = TestRun(
             id=run_id, source=ibutsu_source, metadata={"project": ibutsu_project, **extra_data}
         )  # type: ignore
