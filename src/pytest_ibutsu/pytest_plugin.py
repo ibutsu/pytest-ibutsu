@@ -131,7 +131,7 @@ class IbutsuPlugin:
             )
         run = TestRun(
             id=run_id, source=ibutsu_source, metadata={"project": ibutsu_project, **extra_data}
-        )  # type: ignore
+        )
         enabled = False if config.option.collectonly else bool(ibutsu_server)
         return cls(
             enabled, ibutsu_server, ibutsu_token, ibutsu_source, ibutsu_project, extra_data, run

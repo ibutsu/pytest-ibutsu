@@ -10,12 +10,11 @@ from typing import List
 from typing import Optional
 from typing import Union
 
+import attr
 import cattrs
 import pytest
 from attrs import asdict
 from attrs import Attribute
-from attrs import define
-from attrs import field
 
 
 def _safe_string(obj):
@@ -45,7 +44,7 @@ def _serializer(inst: type, field: Attribute, value: Any) -> Any:
         return value
 
 
-@define
+@attr.s(auto_attribs=True)
 class Summary:
     failures: int = 0
     errors: int = 0
@@ -70,19 +69,19 @@ class Summary:
         self.tests += 1
 
 
-@define
+@attr.s(auto_attribs=True)
 class TestRun:
     component: Optional[str] = None
     env: Optional[str] = None
-    id: str = field(factory=lambda: str(uuid.uuid4()))
-    metadata: dict = field(factory=dict)
+    id: str = attr.ib(factory=lambda: str(uuid.uuid4()))
+    metadata: dict = attr.ib(factory=dict)
     source: Optional[str] = None
     start_time: str = ""
     duration: float = 0.0
-    _start_unix_time: float = field(init=False, default=0.0)
-    summary: Summary = field(factory=Summary)
+    _start_unix_time: float = attr.ib(init=False, default=0.0)
+    summary: Summary = attr.ib(factory=Summary)
     # TODO backwards compatibility
-    _data: dict = field(factory=dict)
+    _data: dict = attr.ib(factory=dict)
 
     def __getitem__(self, key):
         # TODO backwards compatibility
@@ -162,14 +161,14 @@ class TestRun:
             start_time=cls.get_start_time(runs),
             duration=cls.get_duration(runs),
             summary=cls.combine_summaries(runs),
-        )  # type: ignore
+        )
 
     @classmethod
     def from_json(cls, run_json: Dict) -> "TestRun":
         return cattrs.structure(run_json, cls)
 
 
-@define
+@attr.s(auto_attribs=True)
 class TestResult:
     FILTERED_MARKERS: ClassVar[List[str]] = ["parametrize"]
     # Convert the blocker category into an Ibutsu Classification
@@ -185,16 +184,16 @@ class TestResult:
     component: Optional[str] = None
     env: Optional[str] = None
     result: str = "passed"
-    id: str = field(factory=lambda: str(uuid.uuid4()))
-    metadata: dict = field(factory=dict)
-    params: dict = field(factory=dict)
+    id: str = attr.ib(factory=lambda: str(uuid.uuid4()))
+    metadata: dict = attr.ib(factory=dict)
+    params: dict = attr.ib(factory=dict)
     run_id: Optional[str] = None
     source: str = "local"
     start_time: str = ""
     duration: float = 0.0
-    _artifacts: Dict[str, Union[bytes, str]] = field(factory=dict)
+    _artifacts: Dict[str, Union[bytes, str]] = attr.ib(factory=dict)
     # TODO backwards compatibility
-    _data: dict = field(factory=dict)
+    _data: dict = attr.ib(factory=dict)
 
     def __getitem__(self, key):
         # TODO backwards compatibility
@@ -263,7 +262,7 @@ class TestResult:
                 "project": item.config.stash[ibutsu_plugin_key].ibutsu_project,
                 **item.config.stash[ibutsu_plugin_key].run.metadata,
             },
-        )  # type: ignore
+        )
 
     @classmethod
     def from_json(cls, result_json: Dict) -> "TestResult":
