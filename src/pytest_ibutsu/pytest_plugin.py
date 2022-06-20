@@ -9,6 +9,7 @@ import tarfile
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Iterator
 
 import pytest
 
@@ -137,6 +138,20 @@ class IbutsuPlugin:
             enabled, ibutsu_server, ibutsu_token, ibutsu_source, ibutsu_project, extra_data, run
         )
 
+    def _find_run_artifacts(self, archive: tarfile.TarFile) -> Iterator[tuple[str, bytes]]:
+        for member in archive.getmembers():
+            path = Path(member.path)
+            if path.match(f"{self.run.id}/*") and path.name != "run.json" and member.isfile():
+                yield path.name, archive.extractfile(member).read()  # type: ignore
+
+    def _find_result_artifacts(
+        self, archive: tarfile.TarFile, result_id: str
+    ) -> Iterator[tuple[str, bytes]]:
+        for name in archive.getnames():
+            path = Path(name)
+            if path.match(f"{self.run.id}/{result_id}/*") and path.name != "result.json":
+                yield path.name, archive.extractfile(name).read()  # type: ignore
+
     def load_archive(self) -> None:
         """Load data from an ibutsu archive."""
         if not Path(f"{self.run.id}.tar.gz").exists():
@@ -144,25 +159,29 @@ class IbutsuPlugin:
         with tarfile.open(f"{self.run.id}.tar.gz", "r:gz") as archive:
             run_json = json.load(archive.extractfile(f"{self.run.id}/run.json"))  # type: ignore
             prior_run = TestRun.from_json(run_json)
-            # we assume here that files are in the specific order
+            for name, run_artifact in self._find_run_artifacts(archive):
+                prior_run.attach_artifact(name, run_artifact)
             for name in archive.getnames():
                 if name.endswith("/result.json"):
                     result_json = json.load(archive.extractfile(name))  # type: ignore
-                    result = TestResult.from_json(result_json)
-                    # keep only the latest result
-                    self.results[result.test_id] = result
-                    continue
-                if re.match(f"{self.run.id}/({UUID_REGEX.pattern})/.+", name):
-                    artifact = archive.extractfile(name).read()  # type: ignore
-                    result.attach_artifact(Path(name).name, artifact)
-        self.run = TestRun.from_test_runs([self.run, prior_run])
+                    prior_result = TestResult.from_json(result_json)
+                    prior_run._results.append(prior_result)
+                    # do not overwrite existing results, keep only the latest
+                    if prior_result.metadata["node_id"] in self.results:
+                        continue
+                    self.results[prior_result.metadata["node_id"]] = prior_result
+                    artifacts = self._find_result_artifacts(archive, prior_result.id)
+                    for name, result_artifact in artifacts:
+                        prior_result.attach_artifact(name, result_artifact)
+        self.run = TestRun.from_sequential_test_runs([self.run, prior_run])
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_collection_modifyitems(
         self, session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
     ) -> None:
         for item in items:
-            item.stash[ibutsu_result_key] = TestResult.from_item(item)
+            result = TestResult.from_item(item)
+            item.stash[ibutsu_result_key] = result
             # TODO backwards compatibility
             item._ibutsu = {
                 "id": item.stash[ibutsu_result_key].id,
@@ -185,6 +204,7 @@ class IbutsuPlugin:
         if self.enabled:
             item.stash[ibutsu_result_key].start_time = datetime.utcnow().isoformat()
             self.results[item.nodeid] = item.stash[ibutsu_result_key]
+            self.run._results.append(item.stash[ibutsu_result_key])
         yield
 
     def pytest_exception_interact(
@@ -252,8 +272,7 @@ class IbutsuPlugin:
             session.config.workeroutput["results"] = pickle.dumps(self.results)
             return
         if is_xdist_controller(session.config):
-            self.run = TestRun.from_test_runs(self.workers_runs)
-        self.run.set_summary_collected(session)
+            self.run = TestRun.from_xdist_test_runs(self)
         self.load_archive()
         session.config.hook.pytest_ibutsu_before_shutdown(config=session.config, ibutsu=self)
         dump_to_archive(self)
