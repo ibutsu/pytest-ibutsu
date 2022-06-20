@@ -74,14 +74,14 @@ class TestRun:
     component: Optional[str] = None
     env: Optional[str] = None
     id: str = attr.ib(factory=lambda: str(uuid.uuid4()))
-    metadata: dict = attr.ib(factory=dict)
+    metadata: Dict = attr.ib(factory=dict)
     source: Optional[str] = None
     start_time: str = ""
     duration: float = 0.0
     _start_unix_time: float = attr.ib(init=False, default=0.0)
     summary: Summary = attr.ib(factory=Summary)
     # TODO backwards compatibility
-    _data: dict = attr.ib(factory=dict)
+    _data: Dict = attr.ib(factory=dict)
 
     def __getitem__(self, key):
         # TODO backwards compatibility
@@ -122,29 +122,7 @@ class TestRun:
         )
 
     @staticmethod
-    def combine_summaries(runs: List["TestRun"]) -> Summary:
-        summary = Summary()
-        for run in runs:
-            summary.failures += run.summary.failures
-            summary.errors += run.summary.errors
-            summary.xfailures += run.summary.xfailures
-            summary.xpasses += run.summary.xpasses
-            summary.skips += run.summary.skips
-            summary.tests += run.summary.tests
-            summary.not_run += run.summary.not_run
-            summary.collected += run.summary.collected
-        return summary
-
-    @staticmethod
-    def get_start_time(runs: List["TestRun"]) -> str:
-        return min(runs, key=lambda run: run.start_time).start_time
-
-    @staticmethod
-    def get_duration(runs: List["TestRun"]) -> float:
-        return max(runs, key=lambda run: run.duration).duration
-
-    @staticmethod
-    def get_metadata(runs: List["TestRun"]) -> dict:
+    def get_metadata(runs: List["TestRun"]) -> Dict:
         metadata = {}
         for run in runs:
             metadata.update(run.metadata)
@@ -185,15 +163,15 @@ class TestResult:
     env: Optional[str] = None
     result: str = "passed"
     id: str = attr.ib(factory=lambda: str(uuid.uuid4()))
-    metadata: dict = attr.ib(factory=dict)
-    params: dict = attr.ib(factory=dict)
+    metadata: Dict = attr.ib(factory=dict)
+    params: Dict = attr.ib(factory=dict)
     run_id: Optional[str] = None
     source: str = "local"
     start_time: str = ""
     duration: float = 0.0
     _artifacts: Dict[str, Union[bytes, str]] = attr.ib(factory=dict)
     # TODO backwards compatibility
-    _data: dict = attr.ib(factory=dict)
+    _data: Dict = attr.ib(factory=dict)
 
     def __getitem__(self, key):
         # TODO backwards compatibility
@@ -382,7 +360,7 @@ class TestResult:
     def attach_artifact(self, name: str, content: Union[bytes, str]) -> None:
         self._artifacts[name] = content
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> Dict:
         return asdict(
             self,
             filter=lambda attr, _: not attr.name.startswith("_"),
