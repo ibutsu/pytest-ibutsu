@@ -103,6 +103,11 @@ class IbutsuSender:
             self._make_call(self.run_api.update_run, id=run.id, run=run.to_dict())
         else:
             self._make_call(self.run_api.add_run, run=run.to_dict())
+        for filename, data in run._artifacts.items():
+            try:
+                self.upload_artifact(run.id, filename, data)
+            except (FileNotFoundError, IsADirectoryError):
+                continue
 
     def does_run_exist(self, run: TestRun) -> bool:
         return bool(self._make_call(self.run_api.get_run, id=run.id))
@@ -110,7 +115,10 @@ class IbutsuSender:
     def add_result(self, result: TestResult):
         self._make_call(self.result_api.add_result, result=result.to_dict())
         for filename, data in result._artifacts.items():
-            self.upload_artifact(result.id, filename, data)
+            try:
+                self.upload_artifact(result.id, filename, data)
+            except (FileNotFoundError, IsADirectoryError):
+                continue
 
     def upload_artifact(self, id_, filename, data, is_run=False):
         kwargs = {"run_id": id_} if is_run else {"result_id": id_}
