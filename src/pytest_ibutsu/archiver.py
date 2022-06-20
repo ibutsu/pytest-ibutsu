@@ -5,6 +5,7 @@ import tarfile
 import time
 from contextlib import AbstractContextManager
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -35,23 +36,29 @@ class IbutsuArchiver(AbstractContextManager):
 
     @staticmethod
     def _get_bytes(value: bytes | str) -> bytes:
-        if isinstance(value, bytes):
-            return value
-        with open(value, "rb") as f:
-            return f.read()
+        return value if isinstance(value, bytes) else Path(value).read_bytes()
 
     def add_result(self, run: TestRun, result: TestResult) -> None:
         self.add_dir(f"{run.id}/{result.id}")
         content = bytes(json.dumps(result.to_dict()), "utf-8")
         self.add_file(f"{run.id}/{result.id}/result.json", content)
         for name, value in result._artifacts.items():
-            content = self._get_bytes(value)
+            try:
+                content = self._get_bytes(value)
+            except (FileNotFoundError, IsADirectoryError):
+                continue
             self.add_file(f"{run.id}/{result.id}/{name}", content)
 
     def add_run(self, run: TestRun) -> None:
         self.add_dir(run.id)
         content = bytes(json.dumps(run.to_dict()), "utf-8")
         self.add_file(f"{run.id}/run.json", content)
+        for name, value in run._artifacts.items():
+            try:
+                content = self._get_bytes(value)
+            except (FileNotFoundError, IsADirectoryError):
+                continue
+            self.add_file(f"{run.id}/{name}", content)
 
     def __enter__(self) -> IbutsuArchiver:
         self.tar = tarfile.open(f"{self.name}.tar.gz", "w:gz")
@@ -66,4 +73,4 @@ def dump_to_archive(ibutsu_plugin: IbutsuPlugin) -> None:
         ibutsu_archiver.add_run(ibutsu_plugin.run)
         for result in ibutsu_plugin.results.values():
             ibutsu_archiver.add_result(ibutsu_plugin.run, result)
-        print(f"Saved results archive to {ibutsu_archiver.name}.tar.gz")
+    print(f"Saved results archive to {ibutsu_archiver.name}.tar.gz")

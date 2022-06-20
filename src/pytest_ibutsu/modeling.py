@@ -67,6 +67,15 @@ class Summary:
             current_count = getattr(self, attr)
             setattr(self, attr, current_count + 1)
         self.tests += 1
+        self.collected += 1
+
+    @classmethod
+    def from_results(cls, results: List["TestResult"]) -> "Summary":
+        summary = cls()
+        for result in results:
+            summary.increment(result)
+        summary.collected = len(results)
+        return summary
 
 
 @attr.s(auto_attribs=True)
@@ -74,14 +83,16 @@ class TestRun:
     component: Optional[str] = None
     env: Optional[str] = None
     id: str = attr.ib(factory=lambda: str(uuid.uuid4()))
-    metadata: dict = attr.ib(factory=dict)
+    metadata: Dict = attr.ib(factory=dict)
     source: Optional[str] = None
     start_time: str = ""
     duration: float = 0.0
+    _results: List["TestResult"] = attr.ib(factory=list)
     _start_unix_time: float = attr.ib(init=False, default=0.0)
+    _artifacts: Dict[str, Union[bytes, str]] = attr.ib(factory=dict)
     summary: Summary = attr.ib(factory=Summary)
     # TODO backwards compatibility
-    _data: dict = attr.ib(factory=dict)
+    _data: Dict = attr.ib(factory=dict)
 
     def __getitem__(self, key):
         # TODO backwards compatibility
@@ -111,8 +122,8 @@ class TestRun:
         if self._start_unix_time:
             self.duration = time.time() - self._start_unix_time
 
-    def set_summary_collected(self, session: pytest.Session) -> None:
-        self.summary.collected = getattr(session, "testscollected", self.summary.tests)
+    def attach_artifact(self, name: str, content: Union[bytes, str]) -> None:
+        self._artifacts[name] = content
 
     def to_dict(self) -> dict:
         return asdict(
@@ -122,45 +133,42 @@ class TestRun:
         )
 
     @staticmethod
-    def combine_summaries(runs: List["TestRun"]) -> Summary:
-        summary = Summary()
-        for run in runs:
-            summary.failures += run.summary.failures
-            summary.errors += run.summary.errors
-            summary.xfailures += run.summary.xfailures
-            summary.xpasses += run.summary.xpasses
-            summary.skips += run.summary.skips
-            summary.tests += run.summary.tests
-            summary.not_run += run.summary.not_run
-            summary.collected += run.summary.collected
-        return summary
-
-    @staticmethod
-    def get_start_time(runs: List["TestRun"]) -> str:
-        return min(runs, key=lambda run: run.start_time).start_time
-
-    @staticmethod
-    def get_duration(runs: List["TestRun"]) -> float:
-        return max(runs, key=lambda run: run.duration).duration
-
-    @staticmethod
-    def get_metadata(runs: List["TestRun"]) -> dict:
+    def get_metadata(runs: List["TestRun"]) -> Dict:
         metadata = {}
         for run in runs:
             metadata.update(run.metadata)
         return metadata
 
     @classmethod
-    def from_test_runs(cls, runs: List["TestRun"]) -> "TestRun":
+    def from_xdist_test_runs(cls, runs: List["TestRun"]) -> "TestRun":
+        results = [result for run in runs for result in run._results]
         return TestRun(
             component=runs[0].component,
             env=runs[0].env,
             id=runs[0].id,
             metadata=cls.get_metadata(runs),
             source=runs[0].source,
-            start_time=cls.get_start_time(runs),
-            duration=cls.get_duration(runs),
-            summary=cls.combine_summaries(runs),
+            start_time=min(runs, key=lambda run: run.start_time).start_time,
+            duration=max(runs, key=lambda run: run.duration).duration,
+            summary=Summary.from_results(results),
+            artifacts=runs[0]._artifacts,
+            results=results,
+        )
+
+    @classmethod
+    def from_sequential_test_runs(cls, runs: List["TestRun"]) -> "TestRun":
+        latest_run = max(runs, key=lambda run: run.start_time)
+        return TestRun(
+            component=latest_run.component,
+            env=latest_run.env,
+            id=latest_run.id,
+            metadata=cls.get_metadata(runs),
+            source=latest_run.source,
+            start_time=min(runs, key=lambda run: run.start_time).start_time,
+            duration=sum(run.duration for run in runs),
+            summary=Summary.from_results(latest_run._results),
+            artifacts=latest_run._artifacts,
+            results=latest_run._results,
         )
 
     @classmethod
@@ -185,15 +193,15 @@ class TestResult:
     env: Optional[str] = None
     result: str = "passed"
     id: str = attr.ib(factory=lambda: str(uuid.uuid4()))
-    metadata: dict = attr.ib(factory=dict)
-    params: dict = attr.ib(factory=dict)
+    metadata: Dict = attr.ib(factory=dict)
+    params: Dict = attr.ib(factory=dict)
     run_id: Optional[str] = None
     source: str = "local"
     start_time: str = ""
     duration: float = 0.0
     _artifacts: Dict[str, Union[bytes, str]] = attr.ib(factory=dict)
     # TODO backwards compatibility
-    _data: dict = attr.ib(factory=dict)
+    _data: Dict = attr.ib(factory=dict)
 
     def __getitem__(self, key):
         # TODO backwards compatibility
@@ -208,7 +216,7 @@ class TestResult:
         return self._data.get(key, default)
 
     @staticmethod
-    def _get_item_params(item: pytest.Item) -> dict:
+    def _get_item_params(item: pytest.Item) -> Dict:
         def get_name(obj):
             return getattr(obj, "_param_name", None) or getattr(obj, "name", None) or str(obj)
 
@@ -248,19 +256,21 @@ class TestResult:
     def from_item(cls, item: pytest.Item) -> "TestResult":
         from .pytest_plugin import ibutsu_plugin_key
 
+        ibutsu_plugin = item.config.stash[ibutsu_plugin_key]
         return cls(
             test_id=cls._get_test_idents(item),
             params=cls._get_item_params(item),
-            source=item.config.stash[ibutsu_plugin_key].ibutsu_source,
-            run_id=item.config.stash[ibutsu_plugin_key].run.id,
+            source=ibutsu_plugin.ibutsu_source,
+            run_id=ibutsu_plugin.run.id,
             metadata={
                 "statuses": {},
-                "run": item.config.stash[ibutsu_plugin_key].run.id,
+                "run": ibutsu_plugin.run.id,
                 "durations": {},
                 "fspath": cls._get_item_fspath(item),
                 "markers": cls._get_item_markers(item),
-                "project": item.config.stash[ibutsu_plugin_key].ibutsu_project,
-                **item.config.stash[ibutsu_plugin_key].run.metadata,
+                "project": ibutsu_plugin.ibutsu_project,
+                "node_id": item.nodeid,
+                **ibutsu_plugin.run.metadata,
             },
         )
 
@@ -382,7 +392,7 @@ class TestResult:
     def attach_artifact(self, name: str, content: Union[bytes, str]) -> None:
         self._artifacts[name] = content
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> Dict:
         return asdict(
             self,
             filter=lambda attr, _: not attr.name.startswith("_"),

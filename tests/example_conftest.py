@@ -18,6 +18,11 @@ def pytest_collection_modifyitems(session, items, config):
         item._ibutsu["data"]["metadata"].update({"node_id": item.nodeid})
 
 
+def pytest_collection_finish(session):
+    ibutsu = session.config.stash[ibutsu_plugin_key]
+    ibutsu.run.attach_artifact("some_artifact.log", bytes("some_artifact", "utf8"))
+
+
 def pytest_exception_interact(node, call, report):
     node.config._ibutsu.upload_artifact_from_file(
         node._ibutsu["id"],
