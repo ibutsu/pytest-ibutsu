@@ -272,7 +272,7 @@ class IbutsuPlugin:
             session.config.workeroutput["results"] = pickle.dumps(self.results)
             return
         if is_xdist_controller(session.config):
-            self.run = TestRun.from_xdist_test_runs(self)
+            self.run = TestRun.from_xdist_test_runs(self.workers_runs)
         self.load_archive()
         session.config.hook.pytest_ibutsu_before_shutdown(config=session.config, ibutsu=self)
         dump_to_archive(self)

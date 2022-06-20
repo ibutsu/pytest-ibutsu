@@ -8,7 +8,6 @@ from typing import ClassVar
 from typing import Dict
 from typing import List
 from typing import Optional
-from typing import TYPE_CHECKING
 from typing import Union
 
 import attr
@@ -16,9 +15,6 @@ import cattrs
 import pytest
 from attrs import asdict
 from attrs import Attribute
-
-if TYPE_CHECKING:
-    from pytest_ibutsu.pytest_plugin import IbutsuPlugin
 
 
 def _safe_string(obj):
@@ -144,8 +140,8 @@ class TestRun:
         return metadata
 
     @classmethod
-    def from_xdist_test_runs(cls, plugin: "IbutsuPlugin") -> "TestRun":
-        runs = plugin.workers_runs
+    def from_xdist_test_runs(cls, runs: List["TestRun"]) -> "TestRun":
+        results = [result for run in runs for result in run._results]
         return TestRun(
             component=runs[0].component,
             env=runs[0].env,
@@ -154,9 +150,9 @@ class TestRun:
             source=runs[0].source,
             start_time=min(runs, key=lambda run: run.start_time).start_time,
             duration=max(runs, key=lambda run: run.duration).duration,
-            summary=Summary.from_results(list(plugin.results.values())),
+            summary=Summary.from_results(results),
             artifacts=runs[0]._artifacts,
-            results=[result for run in runs for result in run._results],
+            results=results,
         )
 
     @classmethod
