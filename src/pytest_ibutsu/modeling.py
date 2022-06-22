@@ -13,11 +13,12 @@ from typing import Tuple
 from typing import TypedDict
 from typing import Union
 
-import attr
 import cattrs
 import pytest
 from attrs import asdict
 from attrs import Attribute
+from attrs import define
+from attrs import field
 from pytest import ExceptionInfo
 
 
@@ -53,7 +54,7 @@ def _serializer(inst: type, field: Attribute, value: Any) -> Any:
         return value
 
 
-@attr.s(auto_attribs=True)
+@define(auto_attribs=True)
 class Summary:
     failures: int = 0
     errors: int = 0
@@ -87,21 +88,21 @@ class Summary:
         return summary
 
 
-@attr.s(auto_attribs=True)
+@define(auto_attribs=True)
 class TestRun:
     component: Optional[str] = None
     env: Optional[str] = None
-    id: str = attr.ib(factory=lambda: str(uuid.uuid4()))
-    metadata: Dict = attr.ib(factory=dict)
+    id: str = field(factory=lambda: str(uuid.uuid4()))
+    metadata: Dict = field(factory=dict)
     source: Optional[str] = None
     start_time: str = ""
     duration: float = 0.0
-    _results: List["TestResult"] = attr.ib(factory=list)
-    _start_unix_time: float = attr.ib(init=False, default=0.0)
-    _artifacts: Dict[str, Union[bytes, str]] = attr.ib(factory=dict)
-    summary: Summary = attr.ib(factory=Summary)
+    _results: List["TestResult"] = field(factory=list)
+    _start_unix_time: float = field(init=False, default=0.0)
+    _artifacts: Dict[str, Union[bytes, str]] = field(factory=dict)
+    summary: Summary = field(factory=Summary)
     # TODO backwards compatibility
-    _data: Dict = attr.ib(factory=dict)
+    _data: Dict = field(factory=dict)
 
     def __getitem__(self, key):
         # TODO backwards compatibility
@@ -134,7 +135,7 @@ class TestRun:
     def attach_artifact(self, name: str, content: Union[bytes, str]) -> None:
         self._artifacts[name] = content
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> Dict:
         return asdict(
             self,
             filter=lambda attr, _: not attr.name.startswith("_"),
@@ -185,7 +186,7 @@ class TestRun:
         return cattrs.structure(run_json, cls)
 
 
-@attr.s(auto_attribs=True)
+@define(auto_attribs=True)
 class TestResult:
     FILTERED_MARKERS: ClassVar[List[str]] = ["parametrize"]
     # Convert the blocker category into an Ibutsu Classification
@@ -201,16 +202,16 @@ class TestResult:
     component: Optional[str] = None
     env: Optional[str] = None
     result: str = "passed"
-    id: str = attr.ib(factory=lambda: str(uuid.uuid4()))
-    metadata: Dict = attr.ib(factory=dict)
-    params: Dict = attr.ib(factory=dict)
+    id: str = field(factory=lambda: str(uuid.uuid4()))
+    metadata: Dict = field(factory=dict)
+    params: Dict = field(factory=dict)
     run_id: Optional[str] = None
     source: str = "local"
     start_time: str = ""
     duration: float = 0.0
-    _artifacts: Dict[str, Union[bytes, str]] = attr.ib(factory=dict)
+    _artifacts: Dict[str, Union[bytes, str]] = field(factory=dict)
     # TODO backwards compatibility
-    _data: Dict = attr.ib(factory=dict)
+    _data: Dict = field(factory=dict)
 
     def __getitem__(self, key):
         # TODO backwards compatibility
