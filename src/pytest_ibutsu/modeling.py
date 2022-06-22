@@ -7,7 +7,10 @@ from typing import Any
 from typing import ClassVar
 from typing import Dict
 from typing import List
+from typing import Mapping
 from typing import Optional
+from typing import Tuple
+from typing import TypedDict
 from typing import Union
 
 import attr
@@ -15,6 +18,12 @@ import cattrs
 import pytest
 from attrs import asdict
 from attrs import Attribute
+from pytest import ExceptionInfo
+
+
+ItemMarker = TypedDict(
+    "ItemMarker", {"name": str, "args": Tuple[Any, ...], "kwargs": Mapping[str, Any]}
+)
 
 
 def _safe_string(obj):
@@ -220,12 +229,11 @@ class TestResult:
         def get_name(obj):
             return getattr(obj, "_param_name", None) or getattr(obj, "name", None) or str(obj)
 
-        if hasattr(item, "callspec"):
-            try:
-                return {p: get_name(v) for p, v in item.callspec.params.items()}
-            except Exception:
-                return {}
-        return {}
+        try:
+            params = item.callspec.params.items()  # type: ignore[attr-defined]
+            return {p: get_name(v) for p, v in params}
+        except Exception:
+            return {}
 
     @staticmethod
     def _get_item_fspath(item: pytest.Item) -> str:
@@ -235,7 +243,7 @@ class TestResult:
         return fspath
 
     @staticmethod
-    def _get_item_markers(item: pytest.Item) -> List[Dict[str, str]]:
+    def _get_item_markers(item: pytest.Item) -> List[ItemMarker]:
         return [
             {"name": m.name, "args": m.args, "kwargs": m.kwargs}
             for m in item.iter_markers()
@@ -303,7 +311,7 @@ class TestResult:
         # otherwise we must use the report to get the skip information
         else:
             try:
-                if report.longrepr:
+                if report.longrepr and isinstance(report.longrepr, tuple):
                     skip_reason = report.longrepr[2].split("Skipped: ")[1]
             except IndexError:
                 pass
@@ -377,8 +385,10 @@ class TestResult:
     def set_metadata_short_tb(
         self,
         call: pytest.CallInfo,
-        report: pytest.TestReport,
+        report: Union[pytest.CollectReport, pytest.TestReport],
     ) -> None:
+        if not isinstance(call.excinfo, ExceptionInfo):
+            return
         val = _safe_string(call.excinfo.value)
         last_lines = "\n".join(report.longreprtext.split("\n")[-4:])
         short_tb = "{}\n{}\n{}".format(
@@ -387,7 +397,8 @@ class TestResult:
         self.metadata["short_tb"] = short_tb
 
     def set_metadata_exception_name(self, call: pytest.CallInfo) -> None:
-        self.metadata["exception_name"] = call.excinfo.type.__name__
+        if isinstance(call.excinfo, ExceptionInfo):
+            self.metadata["exception_name"] = call.excinfo.type.__name__
 
     def attach_artifact(self, name: str, content: Union[bytes, str]) -> None:
         self._artifacts[name] = content
