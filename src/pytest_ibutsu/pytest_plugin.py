@@ -7,6 +7,7 @@ import pickle
 import re
 import tarfile
 import uuid
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator
@@ -78,14 +79,29 @@ class IbutsuPlugin:
 
     def __getitem__(self, key):
         # TODO backwards compatibility
+        warnings.warn(
+            f'_ibutsu["{key}"] will be deprecated in 3.0. '
+            "Please use a corresponding IbutsuPlugin field.",
+            DeprecationWarning,
+        )
         return self._data[key]
 
     def __setitem__(self, key, value):
         # TODO backwards compatibility
+        warnings.warn(
+            f'_ibutsu["{key}"] will be deprecated in 3.0. '
+            "Please use a corresponding IbutsuPlugin field.",
+            DeprecationWarning,
+        )
         self._data[key] = value
 
     def upload_artifact_from_file(self, test_uuid, file_name, file_path):
         # TODO backwards compatibility
+        warnings.warn(
+            "_ibutsu.upload_artifact_from_file will be deprecated in 3.0. "
+            "Please use TestResult.attach_artifact",
+            DeprecationWarning,
+        )
         for test_result in self.results.values():
             if test_result.id == test_uuid:
                 test_result.attach_artifact(file_name, file_path)
