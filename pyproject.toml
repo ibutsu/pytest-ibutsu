@@ -21,10 +21,14 @@ dependencies = [
 ]
 description = "A plugin to sent pytest results to an Ibutsu server"
 dynamic = ["version"]
-license = {file = "LICENSE"}
+license = "MIT"
 maintainers = [{name = "Raoul Snyman"}, {name = "Dmitry Misharov"}]
 name = "pytest-ibutsu"
 readme = "README.rst"
+
+[project.urls]
+Source = "https://github.com/ibutsu/pytest-ibutsu"
+Tracker = "https://github.com/ibutsu/pytest-ibutsu/issues"
 
 [project.optional-dependencies]
 dev = [
