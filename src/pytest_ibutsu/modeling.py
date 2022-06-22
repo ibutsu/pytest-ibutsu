@@ -2,6 +2,7 @@ import json
 import os
 import time
 import uuid
+import warnings
 from datetime import datetime
 from typing import Any
 from typing import ClassVar
@@ -106,10 +107,20 @@ class TestRun:
 
     def __getitem__(self, key):
         # TODO backwards compatibility
+        warnings.warn(
+            f'_ibutsu["{key}"] will be deprecated in 3.0. '
+            "Please use a corresponding TestRun field.",
+            DeprecationWarning,
+        )
         return self._data[key]
 
     def __setitem__(self, key, value):
         # TODO backwards compatibility
+        warnings.warn(
+            f'_ibutsu["{key}"] will be deprecated in 3.0. '
+            "Please use a corresponding TestRun field.",
+            DeprecationWarning,
+        )
         self._data[key] = value
 
     def __attrs_post_init__(self) -> None:
@@ -215,14 +226,29 @@ class TestResult:
 
     def __getitem__(self, key):
         # TODO backwards compatibility
+        warnings.warn(
+            f'_ibutsu["{key}"] will be deprecated in 3.0. '
+            "Please use a corresponding TestResult field.",
+            DeprecationWarning,
+        )
         return self._data[key]
 
     def __setitem__(self, key, value):
         # TODO backwards compatibility
+        warnings.warn(
+            f'_ibutsu["{key}"] will be deprecated in 3.0. '
+            "Please use a corresponding TestResult field.",
+            DeprecationWarning,
+        )
         self._data[key] = value
 
     def get(self, key: str, default=None):
         # TODO backwards compatibility
+        warnings.warn(
+            f'_ibutsu.get("{key}") will be deprecated in 3.0. '
+            "Please use a corresponding TestResult field.",
+            DeprecationWarning,
+        )
         return self._data.get(key, default)
 
     @staticmethod
