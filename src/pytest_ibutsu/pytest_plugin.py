@@ -183,7 +183,7 @@ class IbutsuPlugin:
             result = TestResult.from_item(item)
             item.stash[ibutsu_result_key] = result
             # TODO backwards compatibility
-            item._ibutsu = {
+            item._ibutsu = {  # type: ignore
                 "id": item.stash[ibutsu_result_key].id,
                 "data": {"metadata": {}},
                 "artifacts": {},
@@ -257,7 +257,7 @@ class IbutsuPlugin:
 
     def pytest_sessionfinish(self, session: pytest.Session) -> None:
         if is_xdist_worker(session.config):
-            session.config.workeroutput["ibutsu_enabled"] = self.enabled
+            session.config.workeroutput["ibutsu_enabled"] = self.enabled  # type: ignore
         if (
             not self.enabled
             or is_xdist_controller(session.config)
@@ -268,8 +268,8 @@ class IbutsuPlugin:
         # TODO backwards compatibility
         merge_dicts(self.run["metadata"], self.run.metadata)
         if is_xdist_worker(session.config):
-            session.config.workeroutput["run"] = pickle.dumps(self.run)
-            session.config.workeroutput["results"] = pickle.dumps(self.results)
+            session.config.workeroutput["run"] = pickle.dumps(self.run)  # type: ignore
+            session.config.workeroutput["results"] = pickle.dumps(self.results)  # type: ignore
             return
         if is_xdist_controller(session.config):
             self.run = TestRun.from_xdist_test_runs(self.workers_runs)
@@ -352,4 +352,4 @@ def pytest_configure(config: pytest.Config) -> None:
     config.pluginmanager.register(plugin)
     config.stash[ibutsu_plugin_key] = plugin
     # TODO backwards compatibility
-    config._ibutsu = plugin
+    config._ibutsu = plugin  # type: ignore

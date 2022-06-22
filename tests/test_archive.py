@@ -35,7 +35,7 @@ def run_id():
 
 
 def run_pytest(pytester: pytest.Pytester, args: List[str]) -> pytest.RunResult:
-    pytester.copy_example(CURRENT_DIR / "example_test_to_report_to_ibutsu.py")
+    pytester.copy_example(str(CURRENT_DIR / "example_test_to_report_to_ibutsu.py"))
     pytester.makeconftest((CURRENT_DIR / "example_conftest.py").read_text())
     return pytester.runpytest(*args)
 
@@ -52,13 +52,13 @@ PYTEST_XDIST_ARGS = [
 
 @pytest.fixture(params=PYTEST_XDIST_ARGS)
 def result(run_id: str, pytester: pytest.Pytester, request: pytest.FixtureRequest):
-    args = request.param.pytest_args + [
+    args = request.param.pytest_args + [  # type: ignore
         "--ibutsu=archive",
         "--ibutsu-project=test_project",
         f"--ibutsu-run-id={run_id}",
         "example_test_to_report_to_ibutsu.py",
     ]
-    if request.param.run_twice:
+    if request.param.run_twice:  # type: ignore
         run_pytest(pytester, args + ["-m", "some_marker"])
     return run_pytest(pytester, args)
 
@@ -174,7 +174,7 @@ def pytest_collect_test(
         "--ibutsu=archive",
         "--ibutsu-project=test_project",
         f"--ibutsu-run-id={run_id}",
-    ] + request.param
+    ] + request.param  # type: ignore
     return run_pytest(pytester, args)
 
 
