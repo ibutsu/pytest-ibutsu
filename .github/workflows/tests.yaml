@@ -19,7 +19,9 @@ jobs:
       - uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Pre Commit Checks
+      - name: Install dependencies
+        run: pip install -e .[dev]
+      - name: Pre-commit checks
         uses: pre-commit/action@v2.0.3
       - name: Analysis (git diff)
         if: failure()

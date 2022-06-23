@@ -33,14 +33,11 @@ repos:
   hooks:
   - id: pyupgrade
     language_version: python3
-- repo: https://github.com/pre-commit/mirrors-mypy
-  rev: v0.961
+- repo: local
   hooks:
     - id: mypy
-      language_version: python3
-      additional_dependencies:
-        - attrs
-        - cattrs
-        - ibutsu-client
-        - pytest
-        - types-attrs
+      name: mypy
+      entry: mypy
+      types: [python]
+      language: system
+      args: [--ignore-missing-imports]

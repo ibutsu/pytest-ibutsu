@@ -34,6 +34,9 @@ Tracker = "https://github.com/ibutsu/pytest-ibutsu/issues"
 dev = [
   "pytest-subtests",
   "pytest-xdist",
+  "pre-commit",
+  "mypy",
+  "types-attrs",
 ]
 
 [project.entry-points.pytest11]
