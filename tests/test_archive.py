@@ -59,8 +59,8 @@ def result(run_id: str, pytester: pytest.Pytester, request: pytest.FixtureReques
         "example_test_to_report_to_ibutsu.py",
     ]
     if request.param.run_twice:  # type: ignore
-        run_pytest(pytester, args + ["-m", "some_marker"])
-    return run_pytest(pytester, args)
+        run_pytest(pytester, args)
+    return run_pytest(pytester, args + ["-m", "some_marker"])
 
 
 def test_archive_file(pytester: pytest.Pytester, result: pytest.RunResult, run_id: str):
@@ -88,7 +88,8 @@ def archive(result, pytester: pytest.Pytester, run_id: str) -> Iterator[tarfile.
         yield tar
 
 
-def test_archive_content_run(archive: tarfile.TarFile, run_id: str):
+def test_archive_content_run(request: pytest.FixtureRequest, archive: tarfile.TarFile, run_id: str):
+    run_twice = request.node.callspec.params["result"].run_twice
     members = archive.getmembers()
     assert members[0].isdir(), "root dir is missing"
     assert members[1].isfile(), "run.json is missing"
@@ -104,12 +105,15 @@ def test_archive_content_run(archive: tarfile.TarFile, run_id: str):
     del loaded["id"]
     del loaded["start_time"]
     del loaded["duration"]
-    assert loaded == expected_results.RUN
+    assert loaded == expected_results.RUNS["run_twice" if run_twice else "run_once"]
 
 
-def test_archive_content_results(archive: tarfile.TarFile, subtests, run_id: str):
+def test_archive_content_results(
+    request: pytest.FixtureRequest, archive: tarfile.TarFile, subtests, run_id: str
+):
+    run_twice = request.node.callspec.params["result"].run_twice
     members = [m for m in archive.getmembers() if m.isfile() and "result.json" in m.name]
-    assert len(members) == 7
+    assert len(members) == 7 if run_twice else 3
     for member in members:
         o = archive.extractfile(member)
         result = json.load(o)  # type: ignore

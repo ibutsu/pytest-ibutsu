@@ -186,6 +186,7 @@ class IbutsuPlugin:
                     if prior_result.metadata["node_id"] in self.results:
                         continue
                     self.results[prior_result.metadata["node_id"]] = prior_result
+                    self.run._results.append(prior_result)
                     artifacts = self._find_result_artifacts(archive, prior_result.id)
                     for name, result_artifact in artifacts:
                         prior_result.attach_artifact(name, result_artifact)
