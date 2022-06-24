@@ -1,17 +1,35 @@
-RUN = {
-    "component": None,
-    "env": None,
-    "metadata": {"project": "test_project", "accessibility": True},
-    "source": "local",
-    "summary": {
-        "failures": 2,
-        "errors": 0,
-        "xfailures": 0,
-        "xpasses": 0,
-        "skips": 3,
-        "tests": 7,
-        "collected": 7,
-        "not_run": 0,
+RUNS = {
+    "run_twice": {
+        "component": None,
+        "env": None,
+        "metadata": {"project": "test_project", "accessibility": True},
+        "source": "local",
+        "summary": {
+            "failures": 2,
+            "errors": 0,
+            "xfailures": 0,
+            "xpasses": 0,
+            "skips": 3,
+            "tests": 7,
+            "collected": 7,
+            "not_run": 0,
+        },
+    },
+    "run_once": {
+        "component": None,
+        "env": None,
+        "metadata": {"project": "test_project", "accessibility": True},
+        "source": "local",
+        "summary": {
+            "failures": 1,
+            "errors": 0,
+            "xfailures": 0,
+            "xpasses": 0,
+            "skips": 1,
+            "tests": 3,
+            "collected": 3,
+            "not_run": 0,
+        },
     },
 }
 
