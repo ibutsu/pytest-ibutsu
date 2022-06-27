@@ -40,3 +40,13 @@ def test_run_to_dict(subtests):
     for key in dict_run:
         with subtests.test(msg="private field", key=key):
             assert not key.startswith("_"), "dictionary must not contain private attributes"
+
+
+def test_run_id_in_xdist_results():
+    tr_1 = TRun(results=[TResult("test_1"), TResult("test_2"), TResult("test_3")])
+    tr_2 = TRun(results=[TResult("test_4"), TResult("test_5"), TResult("test_6")])
+    tr_3 = TRun(results=[TResult("test_7"), TResult("test_8"), TResult("test_9")])
+    tr = TRun.from_xdist_test_runs([tr_1, tr_2, tr_3])
+    for result in tr._results:
+        assert result.run_id == tr_1.id
+        assert result.metadata["run"] == tr_1.id

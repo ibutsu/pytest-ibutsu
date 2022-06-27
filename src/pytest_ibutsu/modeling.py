@@ -162,17 +162,23 @@ class TestRun:
 
     @classmethod
     def from_xdist_test_runs(cls, runs: List["TestRun"]) -> "TestRun":
-        results = [result for run in runs for result in run._results]
+        first_run = runs[0]
+        results = []
+        for run in runs:
+            for result in run._results:
+                result.run_id = first_run.id
+                result.metadata["run"] = first_run.id
+                results.append(result)
         return TestRun(
-            component=runs[0].component,
-            env=runs[0].env,
-            id=runs[0].id,
+            component=first_run.component,
+            env=first_run.env,
+            id=first_run.id,
             metadata=cls.get_metadata(runs),
-            source=runs[0].source,
+            source=first_run.source,
             start_time=min(runs, key=lambda run: run.start_time).start_time,
             duration=max(runs, key=lambda run: run.duration).duration,
             summary=Summary.from_results(results),
-            artifacts=runs[0]._artifacts,
+            artifacts=first_run._artifacts,
             results=results,
         )
 
