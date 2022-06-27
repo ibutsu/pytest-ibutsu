@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import re
 import tarfile
@@ -5,13 +7,12 @@ import uuid
 from collections import namedtuple
 from pathlib import Path
 from typing import Iterator
-from typing import List
 
 import expected_results
 import pytest
 
 ARCHIVE_REGEX = re.compile(
-    r"^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}\.tar\.gz$"
+    r"^([0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12})\.tar\.gz$"
 )
 
 CURRENT_DIR = Path(__file__).parent
@@ -34,7 +35,7 @@ def run_id():
     return str(uuid.uuid4())
 
 
-def run_pytest(pytester: pytest.Pytester, args: List[str]) -> pytest.RunResult:
+def run_pytest(pytester: pytest.Pytester, args: list[str]) -> pytest.RunResult:
     pytester.copy_example(str(CURRENT_DIR / "example_test_to_report_to_ibutsu.py"))
     pytester.makeconftest((CURRENT_DIR / "example_conftest.py").read_text())
     return pytester.runpytest(*args)
@@ -42,28 +43,51 @@ def run_pytest(pytester: pytest.Pytester, args: List[str]) -> pytest.RunResult:
 
 Param = namedtuple("Param", ["run_twice", "pytest_args"])
 
+NO_XDIST_ARGS = [
+    "--ibutsu=archive",
+    "--ibutsu-project=test_project",
+    "example_test_to_report_to_ibutsu.py",
+]
+
+XDIST_ARGS = [
+    "--ibutsu=archive",
+    "--ibutsu-project=test_project",
+    "-p",
+    "xdist",
+    "-n",
+    "2",
+    "example_test_to_report_to_ibutsu.py",
+]
+
 PYTEST_XDIST_ARGS = [
-    pytest.param(Param(False, []), id="no-xdist-run-once"),
-    pytest.param(Param(False, ["-p", "xdist", "-n", "2"]), id="xdist-run-once"),
-    pytest.param(Param(True, []), id="no-xdist-run-twice"),
-    pytest.param(Param(True, ["-p", "xdist", "-n", "2"]), id="xdist-run-twice"),
+    pytest.param(Param(False, NO_XDIST_ARGS), id="no-xdist-run-once"),
+    pytest.param(Param(False, XDIST_ARGS), id="xdist-run-once"),
+    pytest.param(Param(True, NO_XDIST_ARGS), id="no-xdist-run-twice"),
+    pytest.param(Param(True, XDIST_ARGS), id="xdist-run-twice"),
 ]
 
 
 @pytest.fixture(params=PYTEST_XDIST_ARGS)
-def result(run_id: str, pytester: pytest.Pytester, request: pytest.FixtureRequest):
-    args = request.param.pytest_args + [  # type: ignore
-        "--ibutsu=archive",
-        "--ibutsu-project=test_project",
-        f"--ibutsu-run-id={run_id}",
-        "example_test_to_report_to_ibutsu.py",
-    ]
+def test_data(
+    run_id: str, pytester: pytest.Pytester, request: pytest.FixtureRequest
+) -> tuple[pytest.RunResult, str]:
+    args = list(request.param.pytest_args)  # type: ignore
     if request.param.run_twice:  # type: ignore
-        run_pytest(pytester, args)
-    return run_pytest(pytester, args + ["-m", "some_marker"])
+        run_id = str(uuid.uuid4())
+        run_pytest(pytester, args + [f"--ibutsu-run-id={run_id}"])
+        return (
+            run_pytest(pytester, args + ["-m", "some_marker", f"--ibutsu-run-id={run_id}"]),
+            run_id,
+        )
+    result = run_pytest(pytester, args + ["-m", "some_marker"])
+    for path in pytester.path.glob("*.tar.gz"):
+        if match := re.match(ARCHIVE_REGEX, path.name):
+            return result, match.group(1)
+    pytest.fail("No archives were created")
 
 
-def test_archive_file(pytester: pytest.Pytester, result: pytest.RunResult, run_id: str):
+def test_archive_file(pytester: pytest.Pytester, test_data: tuple[pytest.RunResult, str]):
+    result, run_id = test_data
     result.stdout.no_re_match_line("INTERNALERROR")
     result.stdout.re_match_lines([f".*Saved results archive to {run_id}.tar.gz$"])
     archive_name = f"{run_id}.tar.gz"
@@ -72,7 +96,7 @@ def test_archive_file(pytester: pytest.Pytester, result: pytest.RunResult, run_i
     assert archive.lstat().st_size > 0
 
 
-@pytest.mark.usefixtures("result")
+@pytest.mark.usefixtures("test_data")
 def test_archives_count(pytester: pytest.Pytester):
     archives = 0
     for path in pytester.path.glob("*"):
@@ -81,15 +105,23 @@ def test_archives_count(pytester: pytest.Pytester):
 
 
 @pytest.fixture
-def archive(result, pytester: pytest.Pytester, run_id: str) -> Iterator[tarfile.TarFile]:
+def archive(
+    test_data: tuple[pytest.RunResult, str], pytester: pytest.Pytester
+) -> Iterator[tarfile.TarFile]:
+    _, run_id = test_data
     archive_name = f"{run_id}.tar.gz"
     archive_path = pytester.path.joinpath(archive_name)
     with tarfile.open(archive_path, "r:gz") as tar:
         yield tar
 
 
-def test_archive_content_run(request: pytest.FixtureRequest, archive: tarfile.TarFile, run_id: str):
-    run_twice = request.node.callspec.params["result"].run_twice
+def test_archive_content_run(
+    request: pytest.FixtureRequest,
+    archive: tarfile.TarFile,
+    test_data: tuple[pytest.RunResult, str],
+):
+    _, run_id = test_data
+    run_twice = request.node.callspec.params["test_data"].run_twice
     members = archive.getmembers()
     assert members[0].isdir(), "root dir is missing"
     assert members[1].isfile(), "run.json is missing"
@@ -109,9 +141,13 @@ def test_archive_content_run(request: pytest.FixtureRequest, archive: tarfile.Ta
 
 
 def test_archive_content_results(
-    request: pytest.FixtureRequest, archive: tarfile.TarFile, subtests, run_id: str
+    request: pytest.FixtureRequest,
+    archive: tarfile.TarFile,
+    subtests,
+    test_data: tuple[pytest.RunResult, str],
 ):
-    run_twice = request.node.callspec.params["result"].run_twice
+    _, run_id = test_data
+    run_twice = request.node.callspec.params["test_data"].run_twice
     members = [m for m in archive.getmembers() if m.isfile() and "result.json" in m.name]
     assert len(members) == 7 if run_twice else 3
     for member in members:
@@ -126,6 +162,7 @@ def test_archive_content_results(
             assert result["duration"]
             assert "run_id" in result
             assert result["run_id"] == run_id
+            assert result["metadata"]["run"] == run_id
             result = remove_varying_fields_from_result(result)
             expected_result = expected_results.RESULTS[result["test_id"]]
             assert result == expected_result
@@ -134,7 +171,10 @@ def test_archive_content_results(
 @pytest.mark.parametrize(
     "artifact_name", ["legacy_exception", "actual_exception", "runtest_teardown", "runtest"]
 )
-def test_archive_artifacts(archive: tarfile.TarFile, subtests, artifact_name: str, run_id: str):
+def test_archive_artifacts(
+    archive: tarfile.TarFile, subtests, artifact_name: str, test_data: tuple[pytest.RunResult, str]
+):
+    _, run_id = test_data
     run_json_tar_info = archive.extractfile(archive.getmembers()[1])
     run_json = json.load(run_json_tar_info)  # type: ignore
     members = [m for m in archive.getmembers() if m.isfile() and f"{artifact_name}.log" in m.name]
@@ -158,28 +198,48 @@ def test_archive_artifacts(archive: tarfile.TarFile, subtests, artifact_name: st
 
 PYTEST_COLLECT_ARGS = [
     pytest.param(
-        ["--collect-only", "example_test_to_report_to_ibutsu.py"],
+        [
+            "--ibutsu=archive",
+            "--ibutsu-project=test_project",
+            "--collect-only",
+            "example_test_to_report_to_ibutsu.py",
+        ],
         id="no-xdist-collect-only",
     ),
     pytest.param(
-        ["--collect-only", "example_test_to_report_to_ibutsu.py", "-n", "2"],
+        [
+            "--ibutsu=archive",
+            "--ibutsu-project=test_project",
+            "--collect-only",
+            "example_test_to_report_to_ibutsu.py",
+            "-n",
+            "2",
+        ],
         id="xdist-collect-only",
     ),
-    pytest.param(["-k", "test_that_doesnt_exist"], id="no-xdist-nothing-collected"),
-    pytest.param(["-k", "test_that_doesnt_exist", "-n", "2"], id="xdist-nothing-collected"),
+    pytest.param(
+        ["--ibutsu=archive", "--ibutsu-project=test_project", "-k", "test_that_doesnt_exist"],
+        id="no-xdist-nothing-collected",
+    ),
+    pytest.param(
+        [
+            "--ibutsu=archive",
+            "--ibutsu-project=test_project",
+            "-k",
+            "test_that_doesnt_exist",
+            "-n",
+            "2",
+        ],
+        id="xdist-nothing-collected",
+    ),
 ]
 
 
 @pytest.fixture(params=PYTEST_COLLECT_ARGS)
 def pytest_collect_test(
-    run_id: str, pytester: pytest.Pytester, request: pytest.FixtureRequest
+    pytester: pytest.Pytester, request: pytest.FixtureRequest
 ) -> pytest.RunResult:
-    args = [
-        "--ibutsu=archive",
-        "--ibutsu-project=test_project",
-        f"--ibutsu-run-id={run_id}",
-    ] + request.param  # type: ignore
-    return run_pytest(pytester, args)
+    return run_pytest(pytester, request.param)  # type: ignore
 
 
 def test_collect(pytester: pytest.Pytester, pytest_collect_test: pytest.RunResult):

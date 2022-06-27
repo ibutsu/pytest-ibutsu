@@ -108,7 +108,7 @@ class TestRun:
     def __getitem__(self, key):
         # TODO backwards compatibility
         warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in 3.0. '
+            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
             "Please use a corresponding TestRun field.",
             DeprecationWarning,
         )
@@ -162,17 +162,23 @@ class TestRun:
 
     @classmethod
     def from_xdist_test_runs(cls, runs: List["TestRun"]) -> "TestRun":
-        results = [result for run in runs for result in run._results]
+        first_run = runs[0]
+        results = []
+        for run in runs:
+            for result in run._results:
+                result.run_id = first_run.id
+                result.metadata["run"] = first_run.id
+                results.append(result)
         return TestRun(
-            component=runs[0].component,
-            env=runs[0].env,
-            id=runs[0].id,
+            component=first_run.component,
+            env=first_run.env,
+            id=first_run.id,
             metadata=cls.get_metadata(runs),
-            source=runs[0].source,
+            source=first_run.source,
             start_time=min(runs, key=lambda run: run.start_time).start_time,
             duration=max(runs, key=lambda run: run.duration).duration,
             summary=Summary.from_results(results),
-            artifacts=runs[0]._artifacts,
+            artifacts=first_run._artifacts,
             results=results,
         )
 
@@ -227,7 +233,7 @@ class TestResult:
     def __getitem__(self, key):
         # TODO backwards compatibility
         warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in 3.0. '
+            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
             "Please use a corresponding TestResult field.",
             DeprecationWarning,
         )
@@ -236,7 +242,7 @@ class TestResult:
     def __setitem__(self, key, value):
         # TODO backwards compatibility
         warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in 3.0. '
+            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
             "Please use a corresponding TestResult field.",
             DeprecationWarning,
         )
@@ -245,7 +251,7 @@ class TestResult:
     def get(self, key: str, default=None):
         # TODO backwards compatibility
         warnings.warn(
-            f'_ibutsu.get("{key}") will be deprecated in 3.0. '
+            f'_ibutsu.get("{key}") will be deprecated in pytest-ibutsu 3.0. '
             "Please use a corresponding TestResult field.",
             DeprecationWarning,
         )

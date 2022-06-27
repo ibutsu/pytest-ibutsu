@@ -80,7 +80,7 @@ class IbutsuPlugin:
     def __getitem__(self, key):
         # TODO backwards compatibility
         warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in 3.0. '
+            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
             "Please use a corresponding IbutsuPlugin field.",
             DeprecationWarning,
         )
@@ -89,7 +89,7 @@ class IbutsuPlugin:
     def __setitem__(self, key, value):
         # TODO backwards compatibility
         warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in 3.0. '
+            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
             "Please use a corresponding IbutsuPlugin field.",
             DeprecationWarning,
         )
@@ -98,7 +98,7 @@ class IbutsuPlugin:
     def upload_artifact_from_file(self, test_uuid, file_name, file_path):
         # TODO backwards compatibility
         warnings.warn(
-            "_ibutsu.upload_artifact_from_file will be deprecated in 3.0. "
+            "_ibutsu.upload_artifact_from_file will be deprecated in pytest-ibutsu 3.0. "
             "Please use TestResult.attach_artifact",
             DeprecationWarning,
         )
@@ -168,7 +168,7 @@ class IbutsuPlugin:
             if path.match(f"{self.run.id}/{result_id}/*") and path.name != "result.json":
                 yield path.name, archive.extractfile(name).read()  # type: ignore
 
-    def load_archive(self) -> None:
+    def _load_archive(self) -> None:
         """Load data from an ibutsu archive."""
         if not Path(f"{self.run.id}.tar.gz").exists():
             return
@@ -191,6 +191,11 @@ class IbutsuPlugin:
                     for name, result_artifact in artifacts:
                         prior_result.attach_artifact(name, result_artifact)
         self.run = TestRun.from_sequential_test_runs([self.run, prior_run])
+
+    def _update_xdist_result_ids(self) -> None:
+        for result in self.results.values():
+            result.run_id = self.run.id
+            result.metadata["run"] = self.run.id
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_collection_modifyitems(
@@ -290,7 +295,8 @@ class IbutsuPlugin:
             return
         if is_xdist_controller(session.config):
             self.run = TestRun.from_xdist_test_runs(self.workers_runs)
-        self.load_archive()
+            self._update_xdist_result_ids()
+        self._load_archive()
         session.config.hook.pytest_ibutsu_before_shutdown(config=session.config, ibutsu=self)
         dump_to_archive(self)
         if self.ibutsu_server != "archive":
