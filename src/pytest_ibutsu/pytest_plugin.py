@@ -80,7 +80,7 @@ class IbutsuPlugin:
     def __getitem__(self, key):
         # TODO backwards compatibility
         warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in 3.0. '
+            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
             "Please use a corresponding IbutsuPlugin field.",
             DeprecationWarning,
         )
@@ -89,7 +89,7 @@ class IbutsuPlugin:
     def __setitem__(self, key, value):
         # TODO backwards compatibility
         warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in 3.0. '
+            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
             "Please use a corresponding IbutsuPlugin field.",
             DeprecationWarning,
         )
@@ -98,7 +98,7 @@ class IbutsuPlugin:
     def upload_artifact_from_file(self, test_uuid, file_name, file_path):
         # TODO backwards compatibility
         warnings.warn(
-            "_ibutsu.upload_artifact_from_file will be deprecated in 3.0. "
+            "_ibutsu.upload_artifact_from_file will be deprecated in pytest-ibutsu 3.0. "
             "Please use TestResult.attach_artifact",
             DeprecationWarning,
         )
