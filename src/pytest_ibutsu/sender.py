@@ -98,29 +98,28 @@ class IbutsuSender:
             return payload, len(data)
         return open(data, "rb"), os.stat(data).st_size
 
-    def add_or_update_run(self, run: TestRun):
+    def add_or_update_run(self, run: TestRun) -> None:
         if self.does_run_exist(run):
             self._make_call(self.run_api.update_run, id=run.id, run=run.to_dict())
         else:
             self._make_call(self.run_api.add_run, run=run.to_dict())
-        for filename, data in run._artifacts.items():
+
+    def upload_artifacts(self, r: TestResult | TestRun) -> None:
+        for filename, data in r._artifacts.items():
             try:
-                self.upload_artifact(run.id, filename, data)
+                self._upload_artifact(r.id, filename, data, isinstance(r, TestRun))
             except (FileNotFoundError, IsADirectoryError):
                 continue
 
     def does_run_exist(self, run: TestRun) -> bool:
         return bool(self._make_call(self.run_api.get_run, id=run.id))
 
-    def add_result(self, result: TestResult):
+    def add_result(self, result: TestResult) -> None:
         self._make_call(self.result_api.add_result, result=result.to_dict())
-        for filename, data in result._artifacts.items():
-            try:
-                self.upload_artifact(result.id, filename, data)
-            except (FileNotFoundError, IsADirectoryError):
-                continue
 
-    def upload_artifact(self, id_, filename, data, is_run=False):
+    def _upload_artifact(
+        self, id_: str, filename: str, data: bytes | str, is_run: bool = False
+    ) -> None:
         kwargs = {"run_id": id_} if is_run else {"result_id": id_}
         buffered_reader, payload_size = self._get_buffered_reader(data, filename)
         if payload_size < UPLOAD_LIMIT:
@@ -142,7 +141,12 @@ class IbutsuSender:
 def send_data_to_ibutsu(ibutsu_plugin: IbutsuPlugin) -> None:
     sender = IbutsuSender.from_ibutsu_plugin(ibutsu_plugin)
     sender.add_or_update_run(ibutsu_plugin.run)
+    sender.upload_artifacts(ibutsu_plugin.run)
     for result in ibutsu_plugin.results.values():
         sender.add_result(result)
+        sender.upload_artifacts(result)
+    # To start update_run task on Ibutsu server we should update Run
+    # https://github.com/ibutsu/pytest-ibutsu/issues/61
+    sender.add_or_update_run(ibutsu_plugin.run)
     if not sender._has_server_error:
         print(f"Results can be viewed on: {sender.frontend_url}/runs/{ibutsu_plugin.run.id}")
