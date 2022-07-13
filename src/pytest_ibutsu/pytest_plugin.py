@@ -38,11 +38,12 @@ def is_xdist_worker(config: pytest.Config) -> bool:
 
 
 def is_xdist_controller(config: pytest.Config) -> bool:
-    """Return `True` if this is the xdist controller, `False` otherwise
-    Note: this method also returns `False` when distribution has not been
-    activated at all.
-    """
-    return not is_xdist_worker(config) and config.option.dist != "no"
+    """Return `True` if this is the xdist controller, `False` otherwise"""
+    return (
+        not is_xdist_worker(config)
+        and hasattr(config.option, "dist")
+        and config.option.dist != "no"
+    )
 
 
 def merge_dicts(old_dict, new_dict):

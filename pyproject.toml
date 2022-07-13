@@ -36,6 +36,10 @@ dev = [
   "pytest-xdist",
 ]
 
+dev-without-xdist = [
+  "pytest-subtests",
+]
+
 [project.entry-points.pytest11]
 ibutsu = "pytest_ibutsu.pytest_plugin"
 
