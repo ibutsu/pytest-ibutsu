@@ -238,7 +238,12 @@ class IbutsuPlugin:
     ) -> None:
         if not self.enabled:
             return
-        test_result = self.results[node.nodeid]
+        test_result = self.results.get(node.nodeid)
+        if not test_result:
+            # If an exception is thrown in collection, this method is called, even though we
+            # don't yet have an entry for the test, so just ignore the exception and let pytest
+            # handle it.
+            return
         test_result.attach_artifact("traceback.log", bytes(report.longreprtext, "utf8"))
         test_result.set_metadata_short_tb(call, report)
         test_result.set_metadata_exception_name(call)
