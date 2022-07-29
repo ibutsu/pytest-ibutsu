@@ -111,6 +111,7 @@ class TestRun:
             f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
             "Please use a corresponding TestRun field.",
             DeprecationWarning,
+            stacklevel=2,
         )
         return self._data[key]
 
@@ -120,6 +121,7 @@ class TestRun:
             f'_ibutsu["{key}"] will be deprecated in 3.0. '
             "Please use a corresponding TestRun field.",
             DeprecationWarning,
+            stacklevel=2,
         )
         self._data[key] = value
 
@@ -133,7 +135,7 @@ class TestRun:
         if os.getenv("IBUTSU_ENV_ID"):
             self.metadata["env_id"] = os.getenv("IBUTSU_ENV_ID")
         # TODO backwards compatibility
-        self["metadata"] = {}
+        self._data["metadata"] = {}
 
     def start_timer(self) -> None:
         self._start_unix_time = time.time()
