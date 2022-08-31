@@ -49,9 +49,9 @@ If you want to add metadata to each result's metadata, you can use the ``--ibuts
 
     pytest --ibutsu http://ibutsu/ --ibutsu-data key=value
 
-You can specify multiple of this option::
+You can specify multiple metadata items like::
 
-    pytest --ibutsu http://ibutsu/ --ibutsu-data key1=value1 --ibutsu-data key2=value2
+    pytest --ibutsu http://ibutsu/ --ibutsu-data key1=value1 key2=value2
 
 You can also specify sub-keys via dotted notation::
 
