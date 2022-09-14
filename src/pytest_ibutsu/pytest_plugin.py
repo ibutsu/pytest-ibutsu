@@ -62,6 +62,7 @@ class IbutsuPlugin:
         ibutsu_token: str | None,
         ibutsu_source: str,
         ibutsu_project: str,
+        ibutsu_no_archive: bool,
         extra_data: dict,
         run: TestRun,
     ) -> None:
@@ -69,6 +70,7 @@ class IbutsuPlugin:
         self.ibutsu_token = ibutsu_token
         self.ibutsu_source = ibutsu_source
         self.ibutsu_project = ibutsu_project
+        self.ibutsu_no_archive = ibutsu_no_archive
         self.enabled = enabled
         self.extra_data = extra_data
         self.run = run
@@ -142,6 +144,9 @@ class IbutsuPlugin:
             or config.getoption("ibutsu_project")
         )
         run_id = config.getini("ibutsu_run_id") or config.getoption("ibutsu_run_id")
+        ibutsu_no_archive = config.getini("ibutsu_no_archive") or config.getoption(
+            "ibutsu_no_archive"
+        )
         if ibutsu_server and not ibutsu_project:
             raise pytest.UsageError(
                 "Ibutsu project is required, use --ibutsu-project, "
@@ -152,7 +157,14 @@ class IbutsuPlugin:
         )
         enabled = False if config.option.collectonly else bool(ibutsu_server)
         return cls(
-            enabled, ibutsu_server, ibutsu_token, ibutsu_source, ibutsu_project, extra_data, run
+            enabled,
+            ibutsu_server,
+            ibutsu_token,
+            ibutsu_source,
+            ibutsu_project,
+            ibutsu_no_archive,
+            extra_data,
+            run,
         )
 
     def _find_run_artifacts(self, archive: tarfile.TarFile) -> Iterator[tuple[str, bytes]]:
@@ -304,7 +316,8 @@ class IbutsuPlugin:
             self._update_xdist_result_ids()
         self._load_archive()
         session.config.hook.pytest_ibutsu_before_shutdown(config=session.config, ibutsu=self)
-        dump_to_archive(self)
+        if self.ibutsu_server == "archive" or not self.ibutsu_no_archive:
+            dump_to_archive(self)
         if self.ibutsu_server != "archive":
             send_data_to_ibutsu(self)
 
@@ -325,6 +338,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addini("ibutsu_metadata", help="Extra metadata to include with the test results")
     parser.addini("ibutsu_project", help="Project ID or name")
     parser.addini("ibutsu_run_id", help="Test run id")
+    parser.addini("ibutsu_no_archive", help="Do not create an archive")
     group = parser.getgroup("ibutsu")
     group.addoption(
         "--ibutsu",
@@ -373,6 +387,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         metavar="RUN_ID",
         default=str(uuid.uuid4()),
         help="test run id",
+    )
+    group.addoption(
+        "--ibutsu-no-archive",
+        dest="ibutsu_no_archive",
+        action="store_true",
+        default=False,
+        help="do not create an archive",
     )
 
 
