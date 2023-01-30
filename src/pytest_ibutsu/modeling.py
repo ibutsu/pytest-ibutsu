@@ -272,7 +272,7 @@ class TestResult:
 
     @staticmethod
     def _get_item_fspath(item: pytest.Item) -> str:
-        fspath = item.location[0] or item.fspath.strpath
+        fspath = item.location[0] or str(item.path)
         if "site-packages/" in fspath:
             fspath = fspath[fspath.find("site-packages/") + 14 :]
         return fspath
@@ -291,7 +291,7 @@ class TestResult:
             return item.location[2]
         except AttributeError:
             try:
-                return item.fspath.strpath
+                return str(item.path)
             except AttributeError:
                 return item.name
 
