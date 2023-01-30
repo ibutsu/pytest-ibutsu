@@ -8,6 +8,7 @@ import re
 import tarfile
 import uuid
 import warnings
+from base64 import urlsafe_b64decode
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator
@@ -23,6 +24,10 @@ from .sender import send_data_to_ibutsu
 UUID_REGEX = re.compile(
     r"[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}"
 )
+
+
+class ExpiredTokenError(Exception):
+    pass
 
 
 class UUIDAction(argparse.Action):
@@ -79,6 +84,17 @@ class IbutsuPlugin:
         self.results: dict[str, TestResult] = {}
         # TODO backwards compatibility
         self._data = {}  # type: ignore
+        if self.ibutsu_token and self.is_token_expired(self.ibutsu_token):
+            raise ExpiredTokenError("Your token has expired.")
+
+    def is_token_expired(self, token: str) -> bool:
+        """Validate a JWT token"""
+        payload = token.split(".")[1]
+        if len(payload) % 4 != 0:
+            payload += "=" * (4 - (len(payload) % 4))
+        payload_dict = json.loads(urlsafe_b64decode(payload))
+        expires = datetime.fromtimestamp(payload_dict["exp"])
+        return datetime.now() > expires
 
     def __getitem__(self, key):
         # TODO backwards compatibility
