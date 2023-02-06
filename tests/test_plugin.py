@@ -1,4 +1,5 @@
 from datetime import datetime
+from datetime import timezone
 
 import pytest
 from jose import jwt
@@ -22,9 +23,8 @@ def test_from_config_with_project(pytester: pytest.Pytester):
 
 def test_expired_token(pytester: pytest.Pytester):
     """Test the ExpiredTokenError is raised when expired token is passed"""
-    token = jwt.encode(
-        {"exp": datetime.utcnow().timestamp() - 1_000_000}, "secret", algorithm="HS256"
-    )
+    min_timestamp = datetime.min.replace(second=0, microsecond=0, tzinfo=timezone.utc).timestamp()
+    token = jwt.encode({"exp": min_timestamp}, "secret", algorithm="HS256")
     test_config = pytester.parseconfig(
         "--ibutsu", "archive", "--ibutsu-project", "test-project", "--ibutsu-token", token
     )
@@ -34,9 +34,8 @@ def test_expired_token(pytester: pytest.Pytester):
 
 def test_valid_token(pytester: pytest.Pytester):
     """Test the ExpiredTokenError is NOT raised when valid token is passed"""
-    token = jwt.encode(
-        {"exp": datetime.utcnow().timestamp() + 1_000_000}, "secret", algorithm="HS256"
-    )
+    max_timestamp = datetime.max.replace(second=0, microsecond=0, tzinfo=timezone.utc).timestamp()
+    token = jwt.encode({"exp": max_timestamp}, "secret", algorithm="HS256")
     test_config = pytester.parseconfig(
         "--ibutsu", "archive", "--ibutsu-project", "test-project", "--ibutsu-token", token
     )
