@@ -10,6 +10,7 @@ import uuid
 import warnings
 from base64 import urlsafe_b64decode
 from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -93,8 +94,8 @@ class IbutsuPlugin:
         if len(payload) % 4 != 0:
             payload += "=" * (4 - (len(payload) % 4))
         payload_dict = json.loads(urlsafe_b64decode(payload))
-        expires = datetime.fromtimestamp(payload_dict["exp"])
-        return datetime.now() > expires
+        expires = datetime.fromtimestamp(payload_dict["exp"], tz=timezone.utc)
+        return datetime.now(tz=timezone.utc) > expires
 
     def __getitem__(self, key):
         # TODO backwards compatibility
