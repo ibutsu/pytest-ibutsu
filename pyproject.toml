@@ -34,9 +34,11 @@ Tracker = "https://github.com/ibutsu/pytest-ibutsu/issues"
 dev = [
   "pytest-subtests",
   "pytest-xdist",
+  "python-jose>=3.3.0",
 ]
 
 dev-without-xdist = [
+  "python-jose>=3.3.0",
   "pytest-subtests",
 ]
 
