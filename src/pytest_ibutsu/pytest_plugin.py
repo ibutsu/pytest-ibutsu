@@ -12,6 +12,7 @@ from base64 import urlsafe_b64decode
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
+from typing import Generator
 from typing import Iterator
 
 import pytest
@@ -251,13 +252,15 @@ class IbutsuPlugin:
             return
         self.run.start_timer()
 
-    @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_protocol(self, item: pytest.Item) -> object | None:
+    @pytest.hookimpl(wrapper=True)
+    def pytest_runtest_protocol(
+        self, item: pytest.Item, nextitem: pytest.Item
+    ) -> Generator[object, None]:
         if self.enabled:
             item.stash[ibutsu_result_key].start_time = datetime.utcnow().isoformat()
             self.results[item.nodeid] = item.stash[ibutsu_result_key]
             self.run._results.append(item.stash[ibutsu_result_key])
-        yield
+        yield  # type: ignore
 
     def pytest_exception_interact(
         self,
