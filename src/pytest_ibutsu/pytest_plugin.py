@@ -235,12 +235,7 @@ class IbutsuPlugin:
         for item in items:
             result = TestResult.from_item(item)
             item.stash[ibutsu_result_key] = result
-            # TODO backwards compatibility
-            item._ibutsu = {  # type: ignore
-                "id": item.stash[ibutsu_result_key].id,
-                "data": {"metadata": {}},
-                "artifacts": {},
-            }
+
 
     def pytest_collection_finish(self, session: pytest.Session) -> None:
         if not self.enabled:
@@ -293,10 +288,6 @@ class IbutsuPlugin:
         """Backward compatibility hook to merge metadata from item._ibutsu["data"]["metadata"]"""
         if not self.enabled:
             return
-        # TODO backwards compatibility
-        metadata = getattr(item, "_ibutsu", {}).get("data", {}).get("metadata", {})
-        # TODO backwards compatibility
-        merge_dicts(metadata, item.stash[ibutsu_result_key].metadata)
 
     def pytest_runtest_logfinish(self, nodeid: str) -> None:
         if not self.enabled or nodeid not in self.results:
@@ -421,5 +412,3 @@ def pytest_configure(config: pytest.Config) -> None:
     plugin = IbutsuPlugin.from_config(config)
     config.pluginmanager.register(plugin)
     config.stash[ibutsu_plugin_key] = plugin
-    # TODO backwards compatibility
-    config._ibutsu = plugin  # type: ignore

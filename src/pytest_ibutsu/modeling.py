@@ -102,28 +102,9 @@ class TestRun:
     _start_unix_time: float = field(init=False, default=0.0)
     _artifacts: Dict[str, Union[bytes, str]] = field(factory=dict)
     summary: Summary = field(factory=Summary)
-    # TODO backwards compatibility
-    _data: Dict = field(factory=dict)
 
-    def __getitem__(self, key):
-        # TODO backwards compatibility
-        warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
-            "Please use a corresponding TestRun field.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self._data[key]
 
-    def __setitem__(self, key, value):
-        # TODO backwards compatibility
-        warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in 3.0. '
-            "Please use a corresponding TestRun field.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self._data[key] = value
+
 
     def __attrs_post_init__(self) -> None:
         if os.getenv("JOB_NAME") and os.getenv("BUILD_NUMBER"):
@@ -134,9 +115,6 @@ class TestRun:
             }
         if os.getenv("IBUTSU_ENV_ID"):
             self.metadata["env_id"] = os.getenv("IBUTSU_ENV_ID")
-        # TODO backwards compatibility
-        self._data["metadata"] = {}
-
     def start_timer(self) -> None:
         self._start_unix_time = time.time()
         self.start_time = datetime.utcnow().isoformat()
@@ -229,35 +207,9 @@ class TestResult:
     start_time: str = ""
     duration: float = 0.0
     _artifacts: Dict[str, Union[bytes, str]] = field(factory=dict)
-    # TODO backwards compatibility
-    _data: Dict = field(factory=dict)
 
-    def __getitem__(self, key):
-        # TODO backwards compatibility
-        warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
-            "Please use a corresponding TestResult field.",
-            DeprecationWarning,
-        )
-        return self._data[key]
 
-    def __setitem__(self, key, value):
-        # TODO backwards compatibility
-        warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
-            "Please use a corresponding TestResult field.",
-            DeprecationWarning,
-        )
-        self._data[key] = value
 
-    def get(self, key: str, default=None):
-        # TODO backwards compatibility
-        warnings.warn(
-            f'_ibutsu.get("{key}") will be deprecated in pytest-ibutsu 3.0. '
-            "Please use a corresponding TestResult field.",
-            DeprecationWarning,
-        )
-        return self._data.get(key, default)
 
     @staticmethod
     def _get_item_params(item: pytest.Item) -> Dict:
