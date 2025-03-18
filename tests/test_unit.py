@@ -39,7 +39,9 @@ def test_run_to_dict(subtests):
     dict_run = run.to_dict()
     for key in dict_run:
         with subtests.test(msg="private field", key=key):
-            assert not key.startswith("_"), "dictionary must not contain private attributes"
+            assert not key.startswith("_"), (
+                "dictionary must not contain private attributes"
+            )
 
 
 def test_run_id_in_xdist_results():

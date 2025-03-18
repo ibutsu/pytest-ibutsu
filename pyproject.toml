@@ -27,6 +27,7 @@ license = "MIT"
 maintainers = [{name = "Raoul Snyman"}, {name = "Dmitry Misharov"}]
 name = "pytest-ibutsu"
 readme = "README.rst"
+requires-python = ">=3.10"
 
 [project.urls]
 Source = "https://github.com/ibutsu/pytest-ibutsu"

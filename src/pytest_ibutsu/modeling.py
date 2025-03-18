@@ -206,7 +206,11 @@ class TestResult:
     @staticmethod
     def _get_item_params(item: pytest.Item) -> dict:
         def get_name(obj):
-            return getattr(obj, "_param_name", None) or getattr(obj, "name", None) or str(obj)
+            return (
+                getattr(obj, "_param_name", None)
+                or getattr(obj, "name", None)
+                or str(obj)
+            )
 
         try:
             params = item.callspec.params.items()  # type: ignore[attr-defined]
@@ -336,7 +340,11 @@ class TestResult:
         """Handle some logic for when to count certain tests as which state"""
         statuses = self.metadata["statuses"]
         for when, status in statuses.items():
-            if (when == "call" or when == "setup") and status[1] and status[0] == "skipped":
+            if (
+                (when == "call" or when == "setup")
+                and status[1]
+                and status[0] == "skipped"
+            ):
                 self.result = "xfailed"
                 break
             elif when == "call" and status[1] and status[0] == "passed":
@@ -371,7 +379,9 @@ class TestResult:
         val = _safe_string(call.excinfo.value)
         last_lines = "\n".join(report.longreprtext.split("\n")[-4:])
         short_tb = "{}\n{}\n{}".format(
-            last_lines, call.excinfo.type.__name__, val.encode("ascii", "xmlcharrefreplace")
+            last_lines,
+            call.excinfo.type.__name__,
+            val.encode("ascii", "xmlcharrefreplace"),
         )
         self.metadata["short_tb"] = short_tb
 

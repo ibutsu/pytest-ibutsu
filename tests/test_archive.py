@@ -76,7 +76,9 @@ def test_data(
         run_id = str(uuid.uuid4())
         run_pytest(pytester, args + [f"--ibutsu-run-id={run_id}"])
         return (
-            run_pytest(pytester, args + ["-m", "some_marker", f"--ibutsu-run-id={run_id}"]),
+            run_pytest(
+                pytester, args + ["-m", "some_marker", f"--ibutsu-run-id={run_id}"]
+            ),
             run_id,
         )
     result = run_pytest(pytester, args + ["-m", "some_marker"])
@@ -86,7 +88,9 @@ def test_data(
     pytest.fail("No archives were created")
 
 
-def test_archive_file(pytester: pytest.Pytester, test_data: tuple[pytest.RunResult, str]):
+def test_archive_file(
+    pytester: pytest.Pytester, test_data: tuple[pytest.RunResult, str]
+):
     result, run_id = test_data
     result.stdout.no_re_match_line("INTERNALERROR")
     result.stdout.re_match_lines([f".*Saved results archive to {run_id}.tar.gz$"])
@@ -148,7 +152,9 @@ def test_archive_content_results(
 ):
     _, run_id = test_data
     run_twice = request.node.callspec.params["test_data"].run_twice
-    members = [m for m in archive.getmembers() if m.isfile() and "result.json" in m.name]
+    members = [
+        m for m in archive.getmembers() if m.isfile() and "result.json" in m.name
+    ]
     assert len(members) == 7 if run_twice else 3
     for member in members:
         o = archive.extractfile(member)
@@ -169,24 +175,32 @@ def test_archive_content_results(
 
 
 @pytest.mark.parametrize(
-    "artifact_name", ["legacy_exception", "actual_exception", "runtest_teardown", "runtest"]
+    "artifact_name",
+    ["legacy_exception", "actual_exception", "runtest_teardown", "runtest"],
 )
 def test_archive_artifacts(
-    archive: tarfile.TarFile, subtests, artifact_name: str, test_data: tuple[pytest.RunResult, str]
+    archive: tarfile.TarFile,
+    subtests,
+    artifact_name: str,
+    test_data: tuple[pytest.RunResult, str],
 ):
     _, run_id = test_data
     run_json_tar_info = archive.extractfile(archive.getmembers()[1])
     run_json = json.load(run_json_tar_info)  # type: ignore
-    members = [m for m in archive.getmembers() if m.isfile() and f"{artifact_name}.log" in m.name]
+    members = [
+        m
+        for m in archive.getmembers()
+        if m.isfile() and f"{artifact_name}.log" in m.name
+    ]
     collected_or_failed = (
         "collected" if artifact_name in ["runtest_teardown", "runtest"] else "failed"
     )
     collected_or_failures = (
         "collected" if artifact_name in ["runtest_teardown", "runtest"] else "failures"
     )
-    assert (
-        len(members) == run_json["summary"][collected_or_failures]
-    ), f"There should be {artifact_name}.log for each {collected_or_failed} test"
+    assert len(members) == run_json["summary"][collected_or_failures], (
+        f"There should be {artifact_name}.log for each {collected_or_failed} test"
+    )
     run_artifact = archive.extractfile(f"{run_id}/some_artifact.log")
     assert run_artifact.read() == bytes("some_artifact", "utf8")  # type: ignore
     for member in members:
@@ -218,7 +232,12 @@ PYTEST_COLLECT_ARGS = [
         id="xdist-collect-only",
     ),
     pytest.param(
-        ["--ibutsu=archive", "--ibutsu-project=test_project", "-k", "test_that_doesnt_exist"],
+        [
+            "--ibutsu=archive",
+            "--ibutsu-project=test_project",
+            "-k",
+            "test_that_doesnt_exist",
+        ],
         id="no-xdist-nothing-collected",
     ),
     pytest.param(

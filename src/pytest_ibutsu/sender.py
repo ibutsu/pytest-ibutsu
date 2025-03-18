@@ -90,7 +90,9 @@ class IbutsuSender:
             return None
 
     @staticmethod
-    def _get_buffered_reader(data: bytes | str, filename: str) -> tuple[BufferedReader, int]:
+    def _get_buffered_reader(
+        data: bytes | str, filename: str
+    ) -> tuple[BufferedReader, int]:
         if isinstance(data, bytes):
             io_bytes = BytesIO(data)
             io_bytes.name = filename
@@ -132,7 +134,9 @@ class IbutsuSender:
                     **kwargs,
                 )
             except ApiValueError:
-                print(f"Uploading artifact '{filename}' failed as the file closed prematurely.")
+                print(
+                    f"Uploading artifact '{filename}' failed as the file closed prematurely."
+                )
         else:
             print("Artifact size is greater than upload limit")
         buffered_reader.close()
@@ -149,4 +153,6 @@ def send_data_to_ibutsu(ibutsu_plugin: IbutsuPlugin) -> None:
     # https://github.com/ibutsu/pytest-ibutsu/issues/61
     sender.add_or_update_run(ibutsu_plugin.run)
     if not sender._has_server_error:
-        print(f"Results can be viewed on: {sender.frontend_url}/runs/{ibutsu_plugin.run.id}")
+        print(
+            f"Results can be viewed on: {sender.frontend_url}/runs/{ibutsu_plugin.run.id}"
+        )
