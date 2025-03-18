@@ -84,8 +84,6 @@ class IbutsuPlugin:
         self.workers_runs: list[TestRun] = []
         self.workers_enabled: list[bool] = []
         self.results: dict[str, TestResult] = {}
-        # TODO backwards compatibility
-        self._data = {}  # type: ignore
         if self.ibutsu_token and self.is_token_expired(self.ibutsu_token):
             raise ExpiredTokenError("Your token has expired.")
 
@@ -97,24 +95,6 @@ class IbutsuPlugin:
         payload_dict = json.loads(urlsafe_b64decode(payload))
         expires = datetime.fromtimestamp(payload_dict["exp"], tz=timezone.utc)
         return datetime.now(tz=timezone.utc) > expires
-
-    def __getitem__(self, key):
-        # TODO backwards compatibility
-        warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
-            "Please use a corresponding IbutsuPlugin field.",
-            DeprecationWarning,
-        )
-        return self._data[key]
-
-    def __setitem__(self, key, value):
-        # TODO backwards compatibility
-        warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
-            "Please use a corresponding IbutsuPlugin field.",
-            DeprecationWarning,
-        )
-        self._data[key] = value
 
     def upload_artifact_from_file(self, test_uuid, file_name, file_path):
         # TODO backwards compatibility
@@ -236,7 +216,6 @@ class IbutsuPlugin:
             result = TestResult.from_item(item)
             item.stash[ibutsu_result_key] = result
 
-
     def pytest_collection_finish(self, session: pytest.Session) -> None:
         if not self.enabled:
             return
@@ -317,7 +296,6 @@ class IbutsuPlugin:
             return
         self.run.set_duration()
         # TODO backwards compatibility
-        merge_dicts(self.run["metadata"], self.run.metadata)
         if is_xdist_worker(session.config):
             session.config.workeroutput["run"] = pickle.dumps(self.run)  # type: ignore
             session.config.workeroutput["results"] = pickle.dumps(self.results)  # type: ignore

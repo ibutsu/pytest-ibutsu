@@ -15,7 +15,7 @@ def pytest_collection_modifyitems(session, items, config):
     It shouldn't blow up the tests if it's called.
     """
     for item in items:
-        item._ibutsu["data"]["metadata"].update({"node_id": item.nodeid})
+        item.stash[ibutsu_result_key].metadata.update({"node_id": item.nodeid})
 
 
 def pytest_collection_finish(session):
@@ -24,10 +24,10 @@ def pytest_collection_finish(session):
 
 
 def pytest_exception_interact(node, call, report):
-    node.config._ibutsu.upload_artifact_from_file(
-        node._ibutsu["id"],
+    node.config.stash[ibutsu_plugin_key].upload_artifact_from_file(
+        node.stash[ibutsu_result_key].id,
         "legacy_exception.log",
-        bytes(f"legacy_exception_{node._ibutsu['id']}", "utf8"),
+        bytes(f"legacy_exception_{node.stash[ibutsu_result_key].id}", "utf8"),
     )
     test_result = node.config.stash[ibutsu_plugin_key].results[node.nodeid]
     test_result.attach_artifact(
@@ -38,21 +38,21 @@ def pytest_exception_interact(node, call, report):
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_protocol(item):
     yield
-    item.config._ibutsu.upload_artifact_from_file(
-        item._ibutsu["id"],
+    item.config.stash[ibutsu_plugin_key].upload_artifact_from_file(
+        item.stash[ibutsu_result_key].id,
         "runtest.log",
         bytes(f"runtest_{item.stash[ibutsu_result_key].id}", "utf8"),
     )
 
 
 def pytest_runtest_setup(item):
-    item._ibutsu["data"]["metadata"].update({"extra_data": "runtest_setup"})
+    item.stash[ibutsu_result_key].metadata.update({"extra_data": "runtest_setup"})
     item.stash[ibutsu_result_key].metadata.update({"test_type": TestType()})
 
 
 def pytest_runtest_teardown(item):
-    item.config._ibutsu.upload_artifact_raw(
-        item._ibutsu["id"],
+    item.config.stash[ibutsu_plugin_key].upload_artifact_raw(
+        item.stash[ibutsu_result_key].id,
         "runtest_teardown.log",
         bytes(f"runtest_teardown_{item.stash[ibutsu_result_key].id}", "utf-8"),
     )
@@ -60,4 +60,4 @@ def pytest_runtest_teardown(item):
 
 @pytest.mark.tryfirst
 def pytest_sessionfinish(session):
-    session.config._ibutsu.run["metadata"]["accessibility"] = True
+    session.config.stash[ibutsu_plugin_key].run.metadata["accessibility"] = True
