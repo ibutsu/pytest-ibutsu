@@ -55,3 +55,10 @@ def test_run_id_in_xdist_results() -> None:
     for result in tr._results:
         assert result.run_id == tr_1.id
         assert result.metadata["run"] == tr_1.id
+
+
+def test_parse_data_option() -> None:
+    from pytest_ibutsu.pytest_plugin import IbutsuPlugin
+
+    res = IbutsuPlugin._parse_data_option(["a.b.c=1"])
+    assert res == {"a": {"b": {"c": "1"}}}

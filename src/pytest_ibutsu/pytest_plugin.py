@@ -108,7 +108,7 @@ class IbutsuPlugin:
             for path_key in path:
                 if path_key not in current_item:
                     current_item[path_key] = {}
-                current_item = current_item[key]
+                current_item = current_item[path_key]
             current_item[key] = value
         return data_dict
 
