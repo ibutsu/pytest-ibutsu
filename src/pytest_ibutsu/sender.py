@@ -5,7 +5,8 @@ from http.client import BadStatusLine
 from http.client import RemoteDisconnected
 from io import BufferedReader
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
+from typing import TypeVar, ParamSpec
 
 from ibutsu_client import ApiClient
 from ibutsu_client import ApiException
@@ -39,6 +40,10 @@ class TooManyRetriesError(Exception):
     pass
 
 
+R = TypeVar("R")
+P = ParamSpec("P")
+
+
 class IbutsuSender:
     def __init__(self, server_url: str, token: str | None = None):
         self._has_server_error = False
@@ -69,7 +74,9 @@ class IbutsuSender:
     def frontend_url(self) -> str:
         return self.health_api.get_health_info().frontend
 
-    def _make_call(self, api_method, *args, **kwargs):
+    def _make_call(
+        self, api_method: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R | None:
         for res in self._sender_cache:
             if res.ready():
                 self._sender_cache.remove(res)

@@ -6,7 +6,7 @@ import time
 from contextlib import AbstractContextManager
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .pytest_plugin import IbutsuPlugin
@@ -64,7 +64,7 @@ class IbutsuArchiver(AbstractContextManager):
         self.tar = tarfile.open(f"{self.name}.tar.gz", "w:gz")
         return self
 
-    def __exit__(self, *exc_details) -> None:
+    def __exit__(self, *exc_details: Any) -> None:
         self.tar.close()
 
 

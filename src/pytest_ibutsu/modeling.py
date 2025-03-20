@@ -4,12 +4,12 @@ import json
 import os
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any
 from typing import ClassVar
 from typing import Mapping
 from typing import TypedDict
-
+from types import FunctionType
 import cattrs
 import pytest
 from attrs import asdict
@@ -25,7 +25,7 @@ class ItemMarker(TypedDict):
     kwargs: Mapping[str, Any]
 
 
-def _safe_string(obj):
+def _safe_string(obj: object) -> str:
     """This will make string out of ANYTHING without having to worry about the stupid Unicode errors
 
     This function tries to make str/unicode out of ``obj`` unless it already is one of those and
@@ -38,7 +38,7 @@ def _safe_string(obj):
     return obj.encode("ascii", "xmlcharrefreplace").decode("ascii")
 
 
-def _json_serializer(obj):
+def _json_serializer(obj: object | FunctionType) -> str:
     if callable(obj) and hasattr(obj, "__code__"):
         return f"function: '{obj.__name__}', args: {str(obj.__code__.co_varnames)}"
     else:
@@ -112,7 +112,7 @@ class TestRun:
 
     def start_timer(self) -> None:
         self._start_unix_time = time.time()
-        self.start_time = datetime.utcnow().isoformat()
+        self.start_time = datetime.now(UTC).isoformat()
 
     def set_duration(self) -> None:
         if self._start_unix_time:
@@ -205,7 +205,7 @@ class TestResult:
 
     @staticmethod
     def _get_item_params(item: pytest.Item) -> dict:
-        def get_name(obj):
+        def get_name(obj: object) -> str:
             return (
                 getattr(obj, "_param_name", None)
                 or getattr(obj, "name", None)
@@ -378,7 +378,8 @@ class TestResult:
             return
         val = _safe_string(call.excinfo.value)
         last_lines = "\n".join(report.longreprtext.split("\n")[-4:])
-        short_tb = "{}\n{}\n{}".format(
+        # todo - determine if we should use normal repr
+        short_tb = "{}\n{}\n{!r}".format(
             last_lines,
             call.excinfo.type.__name__,
             val.encode("ascii", "xmlcharrefreplace"),

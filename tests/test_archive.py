@@ -6,7 +6,9 @@ import tarfile
 import uuid
 from collections import namedtuple
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Any
+
+import pytest_subtests
 
 import expected_results
 import pytest
@@ -20,7 +22,7 @@ CURRENT_DIR = Path(__file__).parent
 pytest_plugins = "pytester"
 
 
-def remove_varying_fields_from_result(result):
+def remove_varying_fields_from_result(result: dict[str, Any]) -> dict[str, Any]:
     del result["id"]
     del result["run_id"]
     del result["start_time"]
@@ -31,7 +33,7 @@ def remove_varying_fields_from_result(result):
 
 
 @pytest.fixture
-def run_id():
+def run_id() -> str:
     return str(uuid.uuid4())
 
 
@@ -90,7 +92,7 @@ def test_data(
 
 def test_archive_file(
     pytester: pytest.Pytester, test_data: tuple[pytest.RunResult, str]
-):
+) -> None:
     result, run_id = test_data
     result.stdout.no_re_match_line("INTERNALERROR")
     result.stdout.re_match_lines([f".*Saved results archive to {run_id}.tar.gz$"])
@@ -101,7 +103,7 @@ def test_archive_file(
 
 
 @pytest.mark.usefixtures("test_data")
-def test_archives_count(pytester: pytest.Pytester):
+def test_archives_count(pytester: pytest.Pytester) -> None:
     archives = 0
     for path in pytester.path.glob("*"):
         archives += 1 if re.match(ARCHIVE_REGEX, path.name) else 0
@@ -123,7 +125,7 @@ def test_archive_content_run(
     request: pytest.FixtureRequest,
     archive: tarfile.TarFile,
     test_data: tuple[pytest.RunResult, str],
-):
+) -> None:
     _, run_id = test_data
     run_twice = request.node.callspec.params["test_data"].run_twice
     members = archive.getmembers()
@@ -147,9 +149,9 @@ def test_archive_content_run(
 def test_archive_content_results(
     request: pytest.FixtureRequest,
     archive: tarfile.TarFile,
-    subtests,
+    subtests: pytest_subtests.SubTests,
     test_data: tuple[pytest.RunResult, str],
-):
+) -> None:
     _, run_id = test_data
     run_twice = request.node.callspec.params["test_data"].run_twice
     members = [
@@ -180,10 +182,10 @@ def test_archive_content_results(
 )
 def test_archive_artifacts(
     archive: tarfile.TarFile,
-    subtests,
+    subtests: pytest_subtests.SubTests,
     artifact_name: str,
     test_data: tuple[pytest.RunResult, str],
-):
+) -> None:
     _, run_id = test_data
     run_json_tar_info = archive.extractfile(archive.getmembers()[1])
     run_json = json.load(run_json_tar_info)  # type: ignore
@@ -261,7 +263,9 @@ def pytest_collect_test(
     return run_pytest(pytester, request.param)  # type: ignore
 
 
-def test_collect(pytester: pytest.Pytester, pytest_collect_test: pytest.RunResult):
+def test_collect(
+    pytester: pytest.Pytester, pytest_collect_test: pytest.RunResult
+) -> None:
     pytest_collect_test.stdout.no_re_match_line("INTERNALERROR")
     archives = 0
     for path in pytester.path.glob("*"):

@@ -7,12 +7,11 @@ import pickle
 import re
 import tarfile
 import uuid
-import warnings
 from base64 import urlsafe_b64decode
-from datetime import datetime
+from datetime import datetime, UTC
 from datetime import timezone
 from pathlib import Path
-from typing import Generator, Any
+from typing import Generator, Any, TYPE_CHECKING
 from typing import Iterator
 
 import pytest
@@ -22,6 +21,8 @@ from .modeling import TestResult
 from .modeling import TestRun
 from .sender import send_data_to_ibutsu
 
+if TYPE_CHECKING:
+    import xdist.workermanage  # type: ignore[import-untyped]
 
 UUID_REGEX = re.compile(
     r"[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}"
@@ -33,7 +34,13 @@ class ExpiredTokenError(Exception):
 
 
 class UUIDAction(argparse.Action):
-    def __call__(self, parser, namespace, value, option_string=None):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: Any,
+        value: Any,
+        option_string: str | None = None,
+    ) -> None:
         if not re.match(UUID_REGEX, value):
             raise ValueError("Not a uuid")
         setattr(namespace, self.dest, value)
@@ -88,37 +95,20 @@ class IbutsuPlugin:
         expires = datetime.fromtimestamp(payload_dict["exp"], tz=timezone.utc)
         return datetime.now(tz=timezone.utc) > expires
 
-    def upload_artifact_from_file(self, test_uuid, file_name, file_path):
-        # TODO backwards compatibility
-        warnings.warn(
-            "_ibutsu.upload_artifact_from_file will be deprecated in pytest-ibutsu 3.0. "
-            "Please use TestResult.attach_artifact",
-            DeprecationWarning,
-        )
-        for test_result in self.results.values():
-            if test_result.id == test_uuid:
-                test_result.attach_artifact(file_name, file_path)
-                break
-
-    # TODO backwards compatibility
-    upload_artifact_raw = upload_artifact_from_file
-
     @staticmethod
-    def _parse_data_option(data_list):
-        if not data_list:
-            return {}
-        data_dict = {}
+    def _parse_data_option(data_list: list[str]) -> dict[str, Any]:
+        data_dict: dict[str, Any] = {}
+
         for data_str in data_list:
             if not data_str:
                 continue
             key_str, value = data_str.split("=", 1)
-            keys = key_str.split(".")
+            (*path, key) = key_str.split(".")
             current_item = data_dict
-            for key in keys[:-1]:
-                if key not in current_item:
-                    current_item[key] = {}
+            for path_key in path:
+                if path_key not in current_item:
+                    current_item[path_key] = {}
                 current_item = current_item[key]
-            key = keys[-1]
             current_item[key] = value
         return data_dict
 
@@ -130,7 +120,7 @@ class IbutsuPlugin:
         ibutsu_server = ini_or_option("ibutsu_server")
         ibutsu_token = ini_or_option("ibutsu_token")
         ibutsu_source = ini_or_option("ibutsu_source")
-        extra_data = cls._parse_data_option(config.getoption("ibutsu_data"))
+        extra_data = cls._parse_data_option(config.getoption("ibutsu_data") or [])
         ibutsu_project = os.getenv("IBUTSU_PROJECT") or ini_or_option("ibutsu_project")
         run_id = ini_or_option("ibutsu_run_id")
         ibutsu_no_archive = ini_or_option("ibutsu_no_archive")
@@ -229,13 +219,14 @@ class IbutsuPlugin:
 
     @pytest.hookimpl(wrapper=True)
     def pytest_runtest_protocol(
-        self, item: pytest.Item, nextitem: pytest.Item
-    ) -> Generator[object, None]:
+        self,
+        item: pytest.Item,
+    ) -> Generator[Any, None]:
         if self.enabled:
-            item.stash[ibutsu_result_key].start_time = datetime.utcnow().isoformat()
+            item.stash[ibutsu_result_key].start_time = datetime.now(UTC).isoformat()
             self.results[item.nodeid] = item.stash[ibutsu_result_key]
             self.run._results.append(item.stash[ibutsu_result_key])
-        yield  # type: ignore
+        return (yield)
 
     def pytest_exception_interact(
         self,
@@ -264,11 +255,6 @@ class IbutsuPlugin:
         test_result.set_metadata_user_properties(report)
         test_result.set_metadata_reason(report)
 
-    def pytest_runtest_makereport(self, item, call):
-        """Backward compatibility hook to merge metadata from item._ibutsu["data"]["metadata"]"""
-        if not self.enabled:
-            return
-
     def pytest_runtest_logfinish(self, nodeid: str) -> None:
         if not self.enabled or nodeid not in self.results:
             return
@@ -279,7 +265,7 @@ class IbutsuPlugin:
         self.run.summary.increment(test_result)
 
     @pytest.hookimpl(optionalhook=True)
-    def pytest_testnodedown(self, node) -> None:
+    def pytest_testnodedown(self, node: xdist.workermanage.WorkerController) -> None:
         if not self.enabled or not node.workeroutput["ibutsu_enabled"]:
             self.workers_enabled.append(False)
             return
@@ -301,7 +287,7 @@ class IbutsuPlugin:
             session.config.workeroutput["run"] = pickle.dumps(self.run)  # type: ignore
             session.config.workeroutput["results"] = pickle.dumps(self.results)  # type: ignore
             return
-        if is_xdist_controller(session.config):
+        if is_xdist_controller(session.config) and self.workers_runs:
             self.run = TestRun.from_xdist_test_runs(self.workers_runs)
             self._update_xdist_result_ids()
         self._load_archive()

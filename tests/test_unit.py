@@ -1,9 +1,12 @@
+import pytest
+import pytest_subtests
+
 from pytest_ibutsu.modeling import Summary
 from pytest_ibutsu.modeling import TestResult as TResult
 from pytest_ibutsu.modeling import TestRun as TRun
 
 
-def test_summary_increment():
+def test_summary_increment() -> None:
     summary = Summary()
     results = ["passed", "failed", "xfailed", "xpassed", "error"]
     test_results = [TResult(test_id="test", result=result) for result in results]
@@ -16,7 +19,7 @@ def test_summary_increment():
     assert summary.errors == 1
 
 
-def test_run_env_vars(monkeypatch):
+def test_run_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     run = TRun()
     assert "jenkins" not in run.metadata
     assert "env_id" not in run.metadata
@@ -33,7 +36,7 @@ def test_run_env_vars(monkeypatch):
     assert run.metadata["env_id"] == "some_env_id"
 
 
-def test_run_to_dict(subtests):
+def test_run_to_dict(subtests: pytest_subtests.SubTests) -> None:
     run = TRun()
     assert hasattr(run, "_start_unix_time")
     dict_run = run.to_dict()
@@ -44,7 +47,7 @@ def test_run_to_dict(subtests):
             )
 
 
-def test_run_id_in_xdist_results():
+def test_run_id_in_xdist_results() -> None:
     tr_1 = TRun(results=[TResult("test_1"), TResult("test_2"), TResult("test_3")])
     tr_2 = TRun(results=[TResult("test_4"), TResult("test_5"), TResult("test_6")])
     tr_3 = TRun(results=[TResult("test_7"), TResult("test_8"), TResult("test_9")])

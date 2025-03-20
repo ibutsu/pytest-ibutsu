@@ -63,3 +63,11 @@ include = ["/src"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["/src/pytest_ibutsu"]
+
+[tool.mypy]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["ibutsu_client.*"]
+ignore_missing_imports=true
+follow_untyped_imports = true
