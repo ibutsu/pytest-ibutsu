@@ -221,9 +221,7 @@ class TestResult:
     @staticmethod
     def _get_item_fspath(item: pytest.Item) -> str:
         fspath = item.location[0] or str(item.path)
-        if "site-packages/" in fspath:
-            fspath = fspath[fspath.find("site-packages/") + 14 :]
-        return fspath
+        return fspath.split("site-packages/", 1)[-1]
 
     @staticmethod
     def _get_item_markers(item: pytest.Item) -> list[ItemMarker]:
