@@ -5,11 +5,12 @@ from http.client import BadStatusLine
 from http.client import RemoteDisconnected
 from io import BufferedReader
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, cast
+from typing import TypeVar, ParamSpec
 
-from ibutsu_client import ApiClient
-from ibutsu_client import ApiException
-from ibutsu_client import Configuration
+from ibutsu_client.api_client import ApiClient
+from ibutsu_client.exceptions import ApiException
+from ibutsu_client.configuration import Configuration
 from ibutsu_client.api.artifact_api import ArtifactApi
 from ibutsu_client.api.health_api import HealthApi
 from ibutsu_client.api.result_api import ResultApi
@@ -37,6 +38,10 @@ CA_BUNDLE_ENVS = ["REQUESTS_CA_BUNDLE", "IBUTSU_CA_BUNDLE"]
 
 class TooManyRetriesError(Exception):
     pass
+
+
+R = TypeVar("R")
+P = ParamSpec("P")
 
 
 class IbutsuSender:
@@ -67,9 +72,11 @@ class IbutsuSender:
 
     @property
     def frontend_url(self) -> str:
-        return self.health_api.get_health_info().frontend
+        return cast(str, self.health_api.get_health_info().frontend)
 
-    def _make_call(self, api_method, *args, **kwargs):
+    def _make_call(
+        self, api_method: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> R | None:
         for res in self._sender_cache:
             if res.ready():
                 self._sender_cache.remove(res)
@@ -90,7 +97,9 @@ class IbutsuSender:
             return None
 
     @staticmethod
-    def _get_buffered_reader(data: bytes | str, filename: str) -> tuple[BufferedReader, int]:
+    def _get_buffered_reader(
+        data: bytes | str, filename: str
+    ) -> tuple[BufferedReader, int]:
         if isinstance(data, bytes):
             io_bytes = BytesIO(data)
             io_bytes.name = filename
@@ -132,7 +141,9 @@ class IbutsuSender:
                     **kwargs,
                 )
             except ApiValueError:
-                print(f"Uploading artifact '{filename}' failed as the file closed prematurely.")
+                print(
+                    f"Uploading artifact '{filename}' failed as the file closed prematurely."
+                )
         else:
             print("Artifact size is greater than upload limit")
         buffered_reader.close()
@@ -149,4 +160,6 @@ def send_data_to_ibutsu(ibutsu_plugin: IbutsuPlugin) -> None:
     # https://github.com/ibutsu/pytest-ibutsu/issues/61
     sender.add_or_update_run(ibutsu_plugin.run)
     if not sender._has_server_error:
-        print(f"Results can be viewed on: {sender.frontend_url}/runs/{ibutsu_plugin.run.id}")
+        print(
+            f"Results can be viewed on: {sender.frontend_url}/runs/{ibutsu_plugin.run.id}"
+        )

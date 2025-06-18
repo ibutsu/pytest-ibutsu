@@ -7,12 +7,11 @@ import pickle
 import re
 import tarfile
 import uuid
-import warnings
 from base64 import urlsafe_b64decode
-from datetime import datetime
+from datetime import datetime, UTC
 from datetime import timezone
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Any, TYPE_CHECKING
 from typing import Iterator
 
 import pytest
@@ -22,6 +21,8 @@ from .modeling import TestResult
 from .modeling import TestRun
 from .sender import send_data_to_ibutsu
 
+if TYPE_CHECKING:
+    import xdist.workermanage  # type: ignore[import-untyped]
 
 UUID_REGEX = re.compile(
     r"[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}"
@@ -33,7 +34,13 @@ class ExpiredTokenError(Exception):
 
 
 class UUIDAction(argparse.Action):
-    def __call__(self, parser, namespace, value, option_string=None):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: Any,
+        value: Any,
+        option_string: str | None = None,
+    ) -> None:
         if not re.match(UUID_REGEX, value):
             raise ValueError("Not a uuid")
         setattr(namespace, self.dest, value)
@@ -53,14 +60,6 @@ def is_xdist_controller(config: pytest.Config) -> bool:
     )
 
 
-def merge_dicts(old_dict, new_dict):
-    for key, value in old_dict.items():
-        if key not in new_dict:
-            new_dict[key] = value
-        elif isinstance(value, dict):
-            merge_dicts(value, new_dict[key])
-
-
 class IbutsuPlugin:
     def __init__(
         self,
@@ -70,7 +69,7 @@ class IbutsuPlugin:
         ibutsu_source: str,
         ibutsu_project: str,
         ibutsu_no_archive: bool,
-        extra_data: dict,
+        extra_data: dict[str, Any],
         run: TestRun,
     ) -> None:
         self.ibutsu_server = ibutsu_server
@@ -84,8 +83,6 @@ class IbutsuPlugin:
         self.workers_runs: list[TestRun] = []
         self.workers_enabled: list[bool] = []
         self.results: dict[str, TestResult] = {}
-        # TODO backwards compatibility
-        self._data = {}  # type: ignore
         if self.ibutsu_token and self.is_token_expired(self.ibutsu_token):
             raise ExpiredTokenError("Your token has expired.")
 
@@ -98,80 +95,45 @@ class IbutsuPlugin:
         expires = datetime.fromtimestamp(payload_dict["exp"], tz=timezone.utc)
         return datetime.now(tz=timezone.utc) > expires
 
-    def __getitem__(self, key):
-        # TODO backwards compatibility
-        warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
-            "Please use a corresponding IbutsuPlugin field.",
-            DeprecationWarning,
-        )
-        return self._data[key]
-
-    def __setitem__(self, key, value):
-        # TODO backwards compatibility
-        warnings.warn(
-            f'_ibutsu["{key}"] will be deprecated in pytest-ibutsu 3.0. '
-            "Please use a corresponding IbutsuPlugin field.",
-            DeprecationWarning,
-        )
-        self._data[key] = value
-
-    def upload_artifact_from_file(self, test_uuid, file_name, file_path):
-        # TODO backwards compatibility
-        warnings.warn(
-            "_ibutsu.upload_artifact_from_file will be deprecated in pytest-ibutsu 3.0. "
-            "Please use TestResult.attach_artifact",
-            DeprecationWarning,
-        )
-        for test_result in self.results.values():
-            if test_result.id == test_uuid:
-                test_result.attach_artifact(file_name, file_path)
-                break
-
-    # TODO backwards compatibility
-    upload_artifact_raw = upload_artifact_from_file
-
     @staticmethod
-    def _parse_data_option(data_list):
-        if not data_list:
-            return {}
-        data_dict = {}
+    def _parse_data_option(data_list: list[str]) -> dict[str, Any]:
+        data_dict: dict[str, Any] = {}
+
         for data_str in data_list:
             if not data_str:
                 continue
             key_str, value = data_str.split("=", 1)
-            keys = key_str.split(".")
+            (*path, key) = key_str.split(".")
             current_item = data_dict
-            for key in keys[:-1]:
-                if key not in current_item:
-                    current_item[key] = {}
-                current_item = current_item[key]
-            key = keys[-1]
+            for path_key in path:
+                if path_key not in current_item:
+                    current_item[path_key] = {}
+                current_item = current_item[path_key]
             current_item[key] = value
         return data_dict
 
     @classmethod
     def from_config(cls, config: pytest.Config) -> IbutsuPlugin:
-        ibutsu_server = config.getini("ibutsu_server") or config.getoption("ibutsu_server")
-        ibutsu_token = config.getini("ibutsu_token") or config.getoption("ibutsu_token")
-        ibutsu_source = config.getini("ibutsu_source") or config.getoption("ibutsu_source")
-        extra_data = cls._parse_data_option(config.getoption("ibutsu_data"))
-        ibutsu_project = (
-            os.getenv("IBUTSU_PROJECT")
-            or config.getini("ibutsu_project")
-            or config.getoption("ibutsu_project")
-        )
-        run_id = config.getini("ibutsu_run_id") or config.getoption("ibutsu_run_id")
-        ibutsu_no_archive = config.getini("ibutsu_no_archive") or config.getoption(
-            "ibutsu_no_archive"
-        )
+        def ini_or_option(name: str) -> Any:
+            return config.getini(name) or config.getoption(name)
+
+        ibutsu_server = ini_or_option("ibutsu_server")
+        ibutsu_token = ini_or_option("ibutsu_token")
+        ibutsu_source = ini_or_option("ibutsu_source")
+        extra_data = cls._parse_data_option(config.getoption("ibutsu_data") or [])
+        ibutsu_project = os.getenv("IBUTSU_PROJECT") or ini_or_option("ibutsu_project")
+        run_id = ini_or_option("ibutsu_run_id")
+        ibutsu_no_archive = ini_or_option("ibutsu_no_archive")
+
         if ibutsu_server and not ibutsu_project:
             raise pytest.UsageError(
                 "Ibutsu project is required, use --ibutsu-project, "
                 "-o ibutsu_project or the IBUTSU_PROJECT environment variable"
             )
         run = TestRun(
-            id=run_id, source=ibutsu_source, metadata={"project": ibutsu_project, **extra_data}
+            id=run_id,
+            source=ibutsu_source,
+            metadata={"project": ibutsu_project, **extra_data},
         )
         enabled = False if config.option.collectonly else bool(ibutsu_server)
         return cls(
@@ -185,10 +147,16 @@ class IbutsuPlugin:
             run,
         )
 
-    def _find_run_artifacts(self, archive: tarfile.TarFile) -> Iterator[tuple[str, bytes]]:
+    def _find_run_artifacts(
+        self, archive: tarfile.TarFile
+    ) -> Iterator[tuple[str, bytes]]:
         for member in archive.getmembers():
             path = Path(member.path)
-            if path.match(f"{self.run.id}/*") and path.name != "run.json" and member.isfile():
+            if (
+                path.match(f"{self.run.id}/*")
+                and path.name != "run.json"
+                and member.isfile()
+            ):
                 yield path.name, archive.extractfile(member).read()  # type: ignore
 
     def _find_result_artifacts(
@@ -196,7 +164,10 @@ class IbutsuPlugin:
     ) -> Iterator[tuple[str, bytes]]:
         for name in archive.getnames():
             path = Path(name)
-            if path.match(f"{self.run.id}/{result_id}/*") and path.name != "result.json":
+            if (
+                path.match(f"{self.run.id}/{result_id}/*")
+                and path.name != "result.json"
+            ):
                 yield path.name, archive.extractfile(name).read()  # type: ignore
 
     def _load_archive(self) -> None:
@@ -235,12 +206,6 @@ class IbutsuPlugin:
         for item in items:
             result = TestResult.from_item(item)
             item.stash[ibutsu_result_key] = result
-            # TODO backwards compatibility
-            item._ibutsu = {  # type: ignore
-                "id": item.stash[ibutsu_result_key].id,
-                "data": {"metadata": {}},
-                "artifacts": {},
-            }
 
     def pytest_collection_finish(self, session: pytest.Session) -> None:
         if not self.enabled:
@@ -254,18 +219,19 @@ class IbutsuPlugin:
 
     @pytest.hookimpl(wrapper=True)
     def pytest_runtest_protocol(
-        self, item: pytest.Item, nextitem: pytest.Item
-    ) -> Generator[object, None]:
+        self,
+        item: pytest.Item,
+    ) -> Generator[Any, None]:
         if self.enabled:
-            item.stash[ibutsu_result_key].start_time = datetime.utcnow().isoformat()
+            item.stash[ibutsu_result_key].start_time = datetime.now(UTC).isoformat()
             self.results[item.nodeid] = item.stash[ibutsu_result_key]
             self.run._results.append(item.stash[ibutsu_result_key])
-        yield  # type: ignore
+        return (yield)
 
     def pytest_exception_interact(
         self,
         node: pytest.Item | pytest.Collector,
-        call: pytest.CallInfo,
+        call: pytest.CallInfo[None],
         report: pytest.CollectReport | pytest.TestReport,
     ) -> None:
         if not self.enabled:
@@ -289,15 +255,6 @@ class IbutsuPlugin:
         test_result.set_metadata_user_properties(report)
         test_result.set_metadata_reason(report)
 
-    def pytest_runtest_makereport(self, item, call):
-        """Backward compatibility hook to merge metadata from item._ibutsu["data"]["metadata"]"""
-        if not self.enabled:
-            return
-        # TODO backwards compatibility
-        metadata = getattr(item, "_ibutsu", {}).get("data", {}).get("metadata", {})
-        # TODO backwards compatibility
-        merge_dicts(metadata, item.stash[ibutsu_result_key].metadata)
-
     def pytest_runtest_logfinish(self, nodeid: str) -> None:
         if not self.enabled or nodeid not in self.results:
             return
@@ -308,7 +265,7 @@ class IbutsuPlugin:
         self.run.summary.increment(test_result)
 
     @pytest.hookimpl(optionalhook=True)
-    def pytest_testnodedown(self, node) -> None:
+    def pytest_testnodedown(self, node: xdist.workermanage.WorkerController) -> None:
         if not self.enabled or not node.workeroutput["ibutsu_enabled"]:
             self.workers_enabled.append(False)
             return
@@ -326,16 +283,17 @@ class IbutsuPlugin:
             return
         self.run.set_duration()
         # TODO backwards compatibility
-        merge_dicts(self.run["metadata"], self.run.metadata)
         if is_xdist_worker(session.config):
             session.config.workeroutput["run"] = pickle.dumps(self.run)  # type: ignore
             session.config.workeroutput["results"] = pickle.dumps(self.results)  # type: ignore
             return
-        if is_xdist_controller(session.config):
+        if is_xdist_controller(session.config) and self.workers_runs:
             self.run = TestRun.from_xdist_test_runs(self.workers_runs)
             self._update_xdist_result_ids()
         self._load_archive()
-        session.config.hook.pytest_ibutsu_before_shutdown(config=session.config, ibutsu=self)
+        session.config.hook.pytest_ibutsu_before_shutdown(
+            config=session.config, ibutsu=self
+        )
         if self.ibutsu_server == "archive" or not self.ibutsu_no_archive:
             dump_to_archive(self)
         if self.ibutsu_server != "archive":
@@ -355,7 +313,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addini("ibutsu_server", help="The Ibutsu server to connect to")
     parser.addini("ibutsu_token", help="The JWT token to authenticate with the server")
     parser.addini("ibutsu_source", help="The source of the test run")
-    parser.addini("ibutsu_metadata", help="Extra metadata to include with the test results")
+    parser.addini(
+        "ibutsu_metadata", help="Extra metadata to include with the test results"
+    )
     parser.addini("ibutsu_project", help="Project ID or name")
     parser.addini("ibutsu_run_id", help="Test run id")
     parser.addini("ibutsu_no_archive", help="Do not create an archive")
@@ -421,5 +381,3 @@ def pytest_configure(config: pytest.Config) -> None:
     plugin = IbutsuPlugin.from_config(config)
     config.pluginmanager.register(plugin)
     config.stash[ibutsu_plugin_key] = plugin
-    # TODO backwards compatibility
-    config._ibutsu = plugin  # type: ignore

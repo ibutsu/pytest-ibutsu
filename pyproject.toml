@@ -6,9 +6,6 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
-  "Programming Language :: Python :: 3.8",
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: Implementation :: CPython",
@@ -27,21 +24,18 @@ license = "MIT"
 maintainers = [{name = "Raoul Snyman"}, {name = "Dmitry Misharov"}]
 name = "pytest-ibutsu"
 readme = "README.rst"
+requires-python = ">=3.11"
 
 [project.urls]
 Source = "https://github.com/ibutsu/pytest-ibutsu"
 Tracker = "https://github.com/ibutsu/pytest-ibutsu/issues"
 
-[project.optional-dependencies]
-dev = [
+[dependency-groups]
+test = [
   "pytest-subtests",
   "pytest-xdist",
   "python-jose>=3.3.0",
-]
-
-dev-without-xdist = [
-  "python-jose>=3.3.0",
-  "pytest-subtests",
+  "mypy>=1.15"
 ]
 
 [project.entry-points.pytest11]
@@ -62,3 +56,14 @@ include = ["/src"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["/src/pytest_ibutsu"]
+
+[tool.uv]
+default-groups = ["test"]
+
+[tool.mypy]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["ibutsu_client.*"]
+ignore_missing_imports=true
+follow_untyped_imports = true
