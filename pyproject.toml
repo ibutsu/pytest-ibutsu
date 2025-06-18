@@ -30,16 +30,11 @@ requires-python = ">=3.11"
 Source = "https://github.com/ibutsu/pytest-ibutsu"
 Tracker = "https://github.com/ibutsu/pytest-ibutsu/issues"
 
-[project.optional-dependencies]
-dev = [
+[dependency-groups]
+test = [
   "pytest-subtests",
   "pytest-xdist",
   "python-jose>=3.3.0",
-]
-
-dev-without-xdist = [
-  "python-jose>=3.3.0",
-  "pytest-subtests",
 ]
 
 [project.entry-points.pytest11]
@@ -60,6 +55,9 @@ include = ["/src"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["/src/pytest_ibutsu"]
+
+[tool.uv]
+default-groups = ["test"]
 
 [tool.mypy]
 disallow_untyped_defs = true
