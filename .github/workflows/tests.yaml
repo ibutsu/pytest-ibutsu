@@ -39,4 +39,4 @@ jobs:
       - name: Install dependencies
         run: uv sync
       - name: Test with pytest
-        run: pytest -v tests/
+        run: uv run pytest -v tests/
