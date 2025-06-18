@@ -69,7 +69,7 @@ class IbutsuPlugin:
         ibutsu_source: str,
         ibutsu_project: str,
         ibutsu_no_archive: bool,
-        extra_data: dict,
+        extra_data: dict[str, Any],
         run: TestRun,
     ) -> None:
         self.ibutsu_server = ibutsu_server
@@ -231,7 +231,7 @@ class IbutsuPlugin:
     def pytest_exception_interact(
         self,
         node: pytest.Item | pytest.Collector,
-        call: pytest.CallInfo,
+        call: pytest.CallInfo[None],
         report: pytest.CollectReport | pytest.TestReport,
     ) -> None:
         if not self.enabled:

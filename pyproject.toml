@@ -35,6 +35,7 @@ test = [
   "pytest-subtests",
   "pytest-xdist",
   "python-jose>=3.3.0",
+  "mypy>=1.15"
 ]
 
 [project.entry-points.pytest11]

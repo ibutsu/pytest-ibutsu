@@ -4,19 +4,26 @@ import json
 import os
 import time
 import uuid
+import logging
 from datetime import datetime, UTC
 from typing import Any
 from typing import ClassVar
 from typing import Mapping
 from typing import TypedDict
 from types import FunctionType
-import cattrs
+
+from cattrs.preconf.json import make_converter as make_json_converter
 import pytest
-from attrs import asdict
-from attrs import Attribute
-from attrs import define
-from attrs import field
+
+import attrs
 from pytest import ExceptionInfo
+
+log = logging.getLogger(__name__)
+
+# noinspection PyArgumentList
+ibutsu_converter = make_json_converter()
+# we need this due to broken structure - replace wit tagged union and/or consistent handling
+ibutsu_converter.register_structure_hook(str | bytes, lambda o, _: o)
 
 
 class ItemMarker(TypedDict):
@@ -45,14 +52,15 @@ def _json_serializer(obj: object | FunctionType) -> str:
         return str(obj)
 
 
-def _serializer(inst: type, field: Attribute, value: Any) -> Any:
+# todo: replace this by a more controlled version
+def _serializer(inst: type, field: attrs.Attribute[Any], value: Any) -> Any:
     if field and field.name == "metadata":
         return json.loads(json.dumps(value, default=_json_serializer))
     else:
         return value
 
 
-@define(auto_attribs=True)
+@attrs.define(auto_attribs=True)
 class Summary:
     failures: int = 0
     errors: int = 0
@@ -86,19 +94,19 @@ class Summary:
         return summary
 
 
-@define(auto_attribs=True)
+@attrs.define(auto_attribs=True)
 class TestRun:
     component: str | None = None
     env: str | None = None
-    id: str = field(factory=lambda: str(uuid.uuid4()))
-    metadata: dict = field(factory=dict)
+    id: str = attrs.field(factory=lambda: str(uuid.uuid4()))
+    metadata: dict[str, Any] = attrs.field(factory=dict)
     source: str | None = None
     start_time: str = ""
     duration: float = 0.0
-    _results: list[TestResult] = field(factory=list)
-    _start_unix_time: float = field(init=False, default=0.0)
-    _artifacts: dict[str, bytes | str] = field(factory=dict)
-    summary: Summary = field(factory=Summary)
+    _results: list[TestResult] = attrs.field(factory=list)
+    _start_unix_time: float = attrs.field(init=False, default=0.0)
+    _artifacts: dict[str, bytes | str] = attrs.field(factory=dict)
+    summary: Summary = attrs.field(factory=Summary)
 
     def __attrs_post_init__(self) -> None:
         if os.getenv("JOB_NAME") and os.getenv("BUILD_NUMBER"):
@@ -121,15 +129,15 @@ class TestRun:
     def attach_artifact(self, name: str, content: bytes | str) -> None:
         self._artifacts[name] = content
 
-    def to_dict(self) -> dict:
-        return asdict(
+    def to_dict(self) -> dict[str, Any]:
+        return attrs.asdict(
             self,
             filter=lambda attr, _: not attr.name.startswith("_"),
             value_serializer=_serializer,
         )
 
     @staticmethod
-    def get_metadata(runs: list[TestRun]) -> dict:
+    def get_metadata(runs: list[TestRun]) -> dict[str, Any]:
         metadata = {}
         for run in runs:
             metadata.update(run.metadata)
@@ -174,11 +182,11 @@ class TestRun:
         )
 
     @classmethod
-    def from_json(cls, run_json: dict) -> TestRun:
-        return cattrs.structure(run_json, cls)
+    def from_json(cls, run_json: dict[str, Any]) -> TestRun:
+        return ibutsu_converter.structure(run_json, cls)
 
 
-@define(auto_attribs=True)
+@attrs.define(auto_attribs=True)
 class TestResult:
     FILTERED_MARKERS: ClassVar[list[str]] = ["parametrize"]
     # Convert the blocker category into an Ibutsu Classification
@@ -194,17 +202,17 @@ class TestResult:
     component: str | None = None
     env: str | None = None
     result: str = "passed"
-    id: str = field(factory=lambda: str(uuid.uuid4()))
-    metadata: dict = field(factory=dict)
-    params: dict = field(factory=dict)
+    id: str = attrs.field(factory=lambda: str(uuid.uuid4()))
+    metadata: dict[str, Any] = attrs.field(factory=dict)
+    params: dict[str, Any] = attrs.field(factory=dict)
     run_id: str | None = None
     source: str = "local"
     start_time: str = ""
     duration: float = 0.0
-    _artifacts: dict[str, bytes | str] = field(factory=dict)
+    _artifacts: dict[str, bytes | str] = attrs.field(factory=dict)
 
     @staticmethod
-    def _get_item_params(item: pytest.Item) -> dict:
+    def _get_item_params(item: pytest.Item) -> dict[str, Any]:
         def get_name(obj: object) -> str:
             return (
                 getattr(obj, "_param_name", None)
@@ -215,7 +223,8 @@ class TestResult:
         try:
             params = item.callspec.params.items()  # type: ignore[attr-defined]
             return {p: get_name(v) for p, v in params}
-        except Exception:
+        except Exception as e:
+            log.warning("%s %s", item, e)
             return {}
 
     @staticmethod
@@ -226,7 +235,7 @@ class TestResult:
     @staticmethod
     def _get_item_markers(item: pytest.Item) -> list[ItemMarker]:
         return [
-            {"name": m.name, "args": m.args, "kwargs": m.kwargs}
+            ItemMarker(name=m.name, args=m.args, kwargs=m.kwargs)
             for m in item.iter_markers()
             if m.name not in TestResult.FILTERED_MARKERS
         ]
@@ -264,8 +273,8 @@ class TestResult:
         )
 
     @classmethod
-    def from_json(cls, result_json: dict) -> TestResult:
-        return cattrs.structure(result_json, cls)
+    def from_json(cls, result_json: dict[str, Any]) -> TestResult:
+        return ibutsu_converter.structure(result_json, cls)
 
     def _get_xfail_reason(self, report: pytest.TestReport) -> str | None:
         xfail_reason = None
@@ -369,7 +378,7 @@ class TestResult:
 
     def set_metadata_short_tb(
         self,
-        call: pytest.CallInfo,
+        call: pytest.CallInfo[None],
         report: pytest.CollectReport | pytest.TestReport,
     ) -> None:
         if not isinstance(call.excinfo, ExceptionInfo):
@@ -384,7 +393,7 @@ class TestResult:
         )
         self.metadata["short_tb"] = short_tb
 
-    def set_metadata_exception_name(self, call: pytest.CallInfo) -> None:
+    def set_metadata_exception_name(self, call: pytest.CallInfo[None]) -> None:
         if isinstance(call.excinfo, ExceptionInfo):
             self.metadata["exception_name"] = call.excinfo.type.__name__
 
@@ -392,7 +401,8 @@ class TestResult:
         self._artifacts[name] = content
 
     def to_dict(self) -> dict:
-        return asdict(
+        # noinspection PyTypeChecker
+        return attrs.asdict(
             self,
             filter=lambda attr, _: not attr.name.startswith("_"),
             value_serializer=_serializer,

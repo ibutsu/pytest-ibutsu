@@ -5,12 +5,12 @@ from http.client import BadStatusLine
 from http.client import RemoteDisconnected
 from io import BufferedReader
 from io import BytesIO
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, cast
 from typing import TypeVar, ParamSpec
 
-from ibutsu_client import ApiClient
-from ibutsu_client import ApiException
-from ibutsu_client import Configuration
+from ibutsu_client.api_client import ApiClient
+from ibutsu_client.exceptions import ApiException
+from ibutsu_client.configuration import Configuration
 from ibutsu_client.api.artifact_api import ArtifactApi
 from ibutsu_client.api.health_api import HealthApi
 from ibutsu_client.api.result_api import ResultApi
@@ -72,7 +72,7 @@ class IbutsuSender:
 
     @property
     def frontend_url(self) -> str:
-        return self.health_api.get_health_info().frontend
+        return cast(str, self.health_api.get_health_info().frontend)
 
     def _make_call(
         self, api_method: Callable[P, R], *args: P.args, **kwargs: P.kwargs

@@ -16,7 +16,7 @@ from .modeling import TestResult
 from .modeling import TestRun
 
 
-class IbutsuArchiver(AbstractContextManager):
+class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
     def __init__(self, name: str) -> None:
         self.name = name
 
@@ -40,7 +40,7 @@ class IbutsuArchiver(AbstractContextManager):
 
     def add_result(self, run: TestRun, result: TestResult) -> None:
         self.add_dir(f"{run.id}/{result.id}")
-        content = bytes(json.dumps(result.to_dict()), "utf-8")
+        content = json.dumps(result.to_dict()).encode("utf-8")
         self.add_file(f"{run.id}/{result.id}/result.json", content)
         for name, value in result._artifacts.items():
             try:
