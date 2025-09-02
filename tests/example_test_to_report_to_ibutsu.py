@@ -6,7 +6,18 @@ pytest_plugins = "pytester"
 def test_help_message(pytester: pytest.Pytester) -> None:
     result = pytester.runpytest("--help")
     # fnmatch_lines does an assertion internally
-    result.stdout.fnmatch_lines(["ibutsu:", "*--ibutsu=URL*URL for the Ibutsu server"])
+    result.stdout.fnmatch_lines(
+        [
+            "ibutsu:",
+            "*--ibutsu=MODE*",
+            "*--ibutsu-token=TOKEN*",
+            "*--ibutsu-source=SOURCE*",
+            "*--ibutsu-project=PROJECT*",
+            "*--ibutsu-run-id=RUN_ID*",
+            "*--ibutsu-no-archive*",
+        ],
+        consecutive=False,
+    )
 
 
 @pytest.mark.skip("Skipped because I'm not a fan of this test.")

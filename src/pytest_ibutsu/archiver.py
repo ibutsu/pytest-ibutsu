@@ -73,4 +73,4 @@ def dump_to_archive(ibutsu_plugin: IbutsuPlugin) -> None:
         ibutsu_archiver.add_run(ibutsu_plugin.run)
         for result in ibutsu_plugin.results.values():
             ibutsu_archiver.add_result(ibutsu_plugin.run, result)
-    print(f"Saved results archive to {ibutsu_archiver.name}.tar.gz")
+    print(f"Pytest-Ibutsu: Saved results archive to {ibutsu_archiver.name}.tar.gz")

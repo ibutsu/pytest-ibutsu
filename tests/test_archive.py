@@ -8,11 +8,12 @@ from collections import namedtuple
 from pathlib import Path
 from typing import Iterator, Any
 
-import pytest_subtests
+from pytest_subtests import SubTests
 
 import expected_results
 import pytest
 
+# This should match uuid.uuid4()
 ARCHIVE_REGEX = re.compile(
     r"^([0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12})\.tar\.gz$"
 )
@@ -149,7 +150,7 @@ def test_archive_content_run(
 def test_archive_content_results(
     request: pytest.FixtureRequest,
     archive: tarfile.TarFile,
-    subtests: pytest_subtests.SubTests,
+    subtests: SubTests,
     test_data: tuple[pytest.RunResult, str],
 ) -> None:
     _, run_id = test_data
@@ -182,7 +183,7 @@ def test_archive_content_results(
 )
 def test_archive_artifacts(
     archive: tarfile.TarFile,
-    subtests: pytest_subtests.SubTests,
+    subtests: SubTests,
     artifact_name: str,
     test_data: tuple[pytest.RunResult, str],
 ) -> None:
