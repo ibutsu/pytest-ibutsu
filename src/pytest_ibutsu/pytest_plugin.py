@@ -125,6 +125,11 @@ class IbutsuPlugin:
         for data_str in data_list:
             if not data_str:
                 continue
+            if "=" not in data_str:
+                raise ValueError(
+                    f"Invalid --ibutsu-data format: '{data_str}'. "
+                    "Expected format: key=value"
+                )
             key_str, value = data_str.split("=", 1)
             (*path, key) = key_str.split(".")
             current_item = data_dict
@@ -136,23 +141,83 @@ class IbutsuPlugin:
         return data_dict
 
     @classmethod
+    def _get_config_value(
+        cls,
+        config: pytest.Config,
+        option_name: str,
+        ini_name: str,
+        env_name: str,
+        default: Any = None,
+    ) -> Any:
+        """Get configuration value with consistent precedence: CLI > ENV > INI > default"""
+        cli_value = config.getoption(option_name)
+        if cli_value is not None:
+            return cli_value
+
+        env_value = os.getenv(env_name)
+        if env_value is not None:
+            return env_value
+
+        ini_value = config.getini(ini_name)
+        if ini_value is not None and ini_value != "":
+            return ini_value
+
+        return default
+
+    @classmethod
+    def _parse_env_data_option(cls, env_data: str | None) -> list[str]:
+        """Parse environment variable data option into list format"""
+        if not env_data:
+            return []
+        # Support space-separated key=value pairs
+        import shlex
+
+        return shlex.split(env_data)
+
+    @classmethod
     def from_config(cls, config: pytest.Config) -> IbutsuPlugin:
-        # Get the ibutsu mode from command line or ini file
-        ibutsu_mode = config.getoption("ibutsu_mode") or config.getini("ibutsu_server")
-        ibutsu_token = config.getini("ibutsu_token") or config.getoption("ibutsu_token")
-        ibutsu_source = config.getini("ibutsu_source") or config.getoption(
-            "ibutsu_source"
+        # Get all configuration values with consistent precedence: CLI > ENV > INI > defaults
+        ibutsu_mode = cls._get_config_value(
+            config, "ibutsu_mode", "ibutsu_server", "IBUTSU_MODE"
         )
-        extra_data = cls._parse_data_option(config.getoption("ibutsu_data") or [])
-        ibutsu_project = (
-            os.getenv("IBUTSU_PROJECT")
-            or config.getini("ibutsu_project")
-            or config.getoption("ibutsu_project")
+        ibutsu_token = cls._get_config_value(
+            config, "ibutsu_token", "ibutsu_token", "IBUTSU_TOKEN"
         )
-        run_id = config.getini("ibutsu_run_id") or config.getoption("ibutsu_run_id")
-        ibutsu_no_archive = config.getini("ibutsu_no_archive") or config.getoption(
-            "ibutsu_no_archive"
+        ibutsu_source = cls._get_config_value(
+            config, "ibutsu_source", "ibutsu_source", "IBUTSU_SOURCE", "local"
         )
+        ibutsu_project = cls._get_config_value(
+            config, "ibutsu_project", "ibutsu_project", "IBUTSU_PROJECT"
+        )
+        run_id = cls._get_config_value(
+            config, "ibutsu_run_id", "ibutsu_run_id", "IBUTSU_RUN_ID"
+        )
+
+        # Handle boolean option separately
+        ibutsu_no_archive_cli = config.getoption("ibutsu_no_archive")
+        ibutsu_no_archive_env = os.getenv("IBUTSU_NO_ARCHIVE")
+        ibutsu_no_archive_ini = config.getini("ibutsu_no_archive")
+
+        if ibutsu_no_archive_cli is not None:
+            ibutsu_no_archive = bool(ibutsu_no_archive_cli)
+        elif ibutsu_no_archive_env is not None:
+            ibutsu_no_archive = ibutsu_no_archive_env.lower() in (
+                "true",
+                "1",
+                "yes",
+                "on",
+            )
+        elif ibutsu_no_archive_ini is not None:
+            ibutsu_no_archive = bool(ibutsu_no_archive_ini)
+        else:
+            ibutsu_no_archive = False
+
+        # Handle ibutsu_data with environment variable support
+        cli_data = config.getoption("ibutsu_data") or []
+        env_data = cls._parse_env_data_option(os.getenv("IBUTSU_DATA"))
+        # CLI data takes precedence over environment data
+        data_list = cli_data or env_data
+        extra_data = cls._parse_data_option(data_list)
 
         # Validate that project is required for server mode
         if ibutsu_mode and ibutsu_mode not in ("archive", "s3") and not ibutsu_project:
@@ -389,10 +454,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption(
         "--ibutsu-data",
         dest="ibutsu_data",
-        action="store",
-        metavar="KEY=VALUE",
-        nargs="*",
-        help="extra metadata for the test result, key=value",
+        action="append",
+        metavar="DATA",
+        default=[],
+        help="extra metadata for the test result, key=value (can be used multiple times)",
     )
     group.addoption(
         "--ibutsu-project",

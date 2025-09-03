@@ -65,7 +65,7 @@ If you want to add metadata to each result's metadata, you can use the ``--ibuts
 
     pytest --ibutsu http://ibutsu/ --ibutsu-data key=value
 
-You can specify multiple metadata items like::
+You can specify multiple metadata items with spaces or with multiple ``--ibutsu-data`` options::
 
     pytest --ibutsu http://ibutsu/ --ibutsu-data key1=value1 key2=value2
 
@@ -92,6 +92,49 @@ If your Ibutsu server requires a project set, you can do that with the ``--ibuts
 You can also use the project ``name`` field::
 
     pytest --ibutsu http://ibutsu/ --ibutsu-project my-project
+
+Environment Variables
+----------------------
+
+All ``--ibutsu`` options can be configured using environment variables. The plugin follows a consistent precedence order: CLI options > Environment variables > INI file settings > Defaults.
+
+The following environment variables are supported:
+
+- ``IBUTSU_MODE``: Set the Ibutsu mode (equivalent to ``--ibutsu``)::
+
+    export IBUTSU_MODE=archive
+    # or
+    export IBUTSU_MODE=s3
+    # or
+    export IBUTSU_MODE=https://ibutsu.example.com
+
+- ``IBUTSU_TOKEN``: Set the JWT authentication token (equivalent to ``--ibutsu-token``)::
+
+    export IBUTSU_TOKEN=eyJhbGci<.......>CA1opEQ
+
+- ``IBUTSU_SOURCE``: Set the test source (equivalent to ``--ibutsu-source``)::
+
+    export IBUTSU_SOURCE=my-test-run
+
+- ``IBUTSU_PROJECT``: Set the project ID or name (equivalent to ``--ibutsu-project``)::
+
+    export IBUTSU_PROJECT=my-project
+
+- ``IBUTSU_RUN_ID``: Set the test run ID (equivalent to ``--ibutsu-run-id``)::
+
+    export IBUTSU_RUN_ID=550e8400-e29b-41d4-a716-446655440000
+
+- ``IBUTSU_DATA``: Set extra metadata (equivalent to ``--ibutsu-data``)::
+
+    export IBUTSU_DATA="key1=value1 key2=value2"
+    # supports dotted notation
+    export IBUTSU_DATA="key.subkey=value"
+
+- ``IBUTSU_NO_ARCHIVE``: Disable archive creation (equivalent to ``--ibutsu-no-archive``)::
+
+    export IBUTSU_NO_ARCHIVE=true
+
+Using environment variables is particularly useful in CI/CD environments where you can set these values once and have them apply to all pytest runs.
 
 Offline usage
 -------------
