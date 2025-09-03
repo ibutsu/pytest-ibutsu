@@ -107,24 +107,25 @@ class IbutsuSender:
                     retries += 1
                     if retries < MAX_CALL_RETRIES:
                         # Calculate delay with exponential backoff
-                        delay = RETRY_BASE_DELAY * (RETRY_BACKOFF_FACTOR ** (retries - 1))
+                        delay = RETRY_BASE_DELAY * (
+                            RETRY_BACKOFF_FACTOR ** (retries - 1)
+                        )
                         print(
                             f"Network error (attempt {retries}/{MAX_CALL_RETRIES}): {e.__class__.__name__}: {e}. "
                             f"Retrying in {delay:.1f} seconds..."
                         )
                         time.sleep(delay)
                     else:
-                        print(
+                        raise TooManyRetriesError(
+                            f"Too many retries ({MAX_CALL_RETRIES}) while trying to call API"
                             f"Network error (final attempt {retries}/{MAX_CALL_RETRIES}): {e.__class__.__name__}: {e}. "
-                            "Max retries reached."
                         )
-            raise TooManyRetriesError(
-                f"Too many retries ({MAX_CALL_RETRIES}) while trying to call API"
-            )
+
         except (MaxRetryError, ApiException, TooManyRetriesError) as e:
             self._has_server_error = self._has_server_error or True
             self._server_error_tbs.append(str(e))
-            return None
+
+        return None
 
     @staticmethod
     def _get_buffered_reader(data: bytes | str, filename: str) -> tuple[BinaryIO, int]:

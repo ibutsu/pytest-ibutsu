@@ -5,6 +5,10 @@ Ibutsu pytest plugin
     :target: https://github.com/ibutsu/pytest-ibutsu/actions
     :alt: CI Status
 
+.. image:: https://results.pre-commit.ci/badge/github/ibutsu/pytest-ibutsu/main.svg
+   :target: https://results.pre-commit.ci/latest/github/ibutsu/pytest-ibutsu/main
+   :alt: pre-commit.ci status
+
 .. image:: https://codecov.io/gh/ibutsu/pytest-ibutsu/branch/master/graph/badge.svg
     :target: https://codecov.io/gh/ibutsu/pytest-ibutsu
     :alt: Coverage Status
