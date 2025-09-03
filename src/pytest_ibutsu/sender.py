@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from http.client import BadStatusLine
 from http.client import RemoteDisconnected
 from io import BufferedReader
@@ -18,6 +19,8 @@ from ibutsu_client.api.run_api import RunApi
 from ibutsu_client.exceptions import ApiValueError
 from urllib3.exceptions import MaxRetryError
 from urllib3.exceptions import ProtocolError
+from urllib3.exceptions import NewConnectionError
+from urllib3.exceptions import ConnectTimeoutError
 
 from .modeling import TestResult
 from .modeling import TestRun
@@ -32,6 +35,12 @@ UPLOAD_LIMIT = 5 * 1024 * 1024  # 5 MiB
 
 # Maximum number of times an API call is retried
 MAX_CALL_RETRIES = 3
+
+# Base delay between retries in seconds
+RETRY_BASE_DELAY = 1.0
+
+# Backoff factor for exponential delay
+RETRY_BACKOFF_FACTOR = 2.0
 
 CA_BUNDLE_ENVS = ["REQUESTS_CA_BUNDLE", "IBUTSU_CA_BUNDLE"]
 
@@ -88,9 +97,30 @@ class IbutsuSender:
                     if "async_req" in kwargs:
                         self._sender_cache.append(out)
                     return out
-                except (RemoteDisconnected, ProtocolError, BadStatusLine):
+                except (
+                    RemoteDisconnected,
+                    ProtocolError,
+                    BadStatusLine,
+                    NewConnectionError,
+                    ConnectTimeoutError,
+                ) as e:
                     retries += 1
-            raise TooManyRetriesError("Too many retries while trying to call API")
+                    if retries < MAX_CALL_RETRIES:
+                        # Calculate delay with exponential backoff
+                        delay = RETRY_BASE_DELAY * (RETRY_BACKOFF_FACTOR ** (retries - 1))
+                        print(
+                            f"Network error (attempt {retries}/{MAX_CALL_RETRIES}): {e.__class__.__name__}: {e}. "
+                            f"Retrying in {delay:.1f} seconds..."
+                        )
+                        time.sleep(delay)
+                    else:
+                        print(
+                            f"Network error (final attempt {retries}/{MAX_CALL_RETRIES}): {e.__class__.__name__}: {e}. "
+                            "Max retries reached."
+                        )
+            raise TooManyRetriesError(
+                f"Too many retries ({MAX_CALL_RETRIES}) while trying to call API"
+            )
         except (MaxRetryError, ApiException, TooManyRetriesError) as e:
             self._has_server_error = self._has_server_error or True
             self._server_error_tbs.append(str(e))
