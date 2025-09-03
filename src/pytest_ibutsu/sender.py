@@ -5,7 +5,7 @@ from http.client import BadStatusLine
 from http.client import RemoteDisconnected
 from io import BufferedReader
 from io import BytesIO
-from typing import TYPE_CHECKING, Callable, cast
+from typing import TYPE_CHECKING, Callable, cast, BinaryIO
 from typing import TypeVar, ParamSpec
 
 from ibutsu_client.api_client import ApiClient
@@ -97,9 +97,7 @@ class IbutsuSender:
             return None
 
     @staticmethod
-    def _get_buffered_reader(
-        data: bytes | str, filename: str
-    ) -> tuple[BufferedReader, int]:
+    def _get_buffered_reader(data: bytes | str, filename: str) -> tuple[BinaryIO, int]:
         if isinstance(data, bytes):
             io_bytes = BytesIO(data)
             io_bytes.name = filename

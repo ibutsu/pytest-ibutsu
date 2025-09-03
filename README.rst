@@ -1,13 +1,29 @@
 Ibutsu pytest plugin
 ====================
 
+.. image:: https://github.com/ibutsu/pytest-ibutsu/workflows/pytest-ibutsu%20tests/badge.svg
+    :target: https://github.com/ibutsu/pytest-ibutsu/actions
+    :alt: CI Status
+
+.. image:: https://codecov.io/gh/ibutsu/pytest-ibutsu/branch/master/graph/badge.svg
+    :target: https://codecov.io/gh/ibutsu/pytest-ibutsu
+    :alt: Coverage Status
+
+.. image:: https://img.shields.io/pypi/v/pytest-ibutsu.svg
+    :target: https://pypi.org/project/pytest-ibutsu/
+    :alt: PyPI Version
+
+.. image:: https://img.shields.io/pypi/pyversions/pytest-ibutsu.svg
+    :target: https://pypi.org/project/pytest-ibutsu/
+    :alt: Python Versions
+
 This is a plugin that will report test rests from pytest to an
 `Ibutsu server <https://github.com/ibutsu/ibutsu-server>`_.
 
 Requirements
 ------------
 
-- Python 3.8+
+- Python 3.11+
 - pytest
 - attrs
 
@@ -87,6 +103,51 @@ an archive which you can upload later. Use ``archive`` with the ``--ibutsu`` opt
 
 The Ibutsu plugin will save the archive in your current directory, and will print out the location.
 
+S3 Upload
+---------
+
+If you want to upload your test artifacts to an Amazon S3 bucket, you can use the ``s3`` mode::
+
+    pytest --ibutsu s3
+
+This will create an archive file and upload any archive files found in the current directory to your configured S3 bucket.
+It will avoid uploading the same file twice, or overwriting a potential UUID collision already in the bucket.
+
+**Requirements for S3 upload:**
+
+1. Install the S3 dependencies::
+
+    pip install pytest-ibutsu[s3]
+
+2. Configure AWS credentials using one of these methods:
+
+   - Environment variables::
+
+       export AWS_ACCESS_KEY_ID=your_access_key
+       export AWS_SECRET_ACCESS_KEY=your_secret_key
+       export AWS_REGION=your_region
+       export AWS_BUCKET=your_bucket_name
+
+   - `AWS credentials file <https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-files.html>`_
+   - EC2 instance profile
+   - AWS IAM role
+
+**Three Operation Modes:**
+
+- **Archive mode**: Create local archive only::
+
+    pytest --ibutsu archive
+
+- **S3 mode**: Create archive and upload to S3::
+
+    pytest --ibutsu s3
+
+- **Server mode**: Send directly to Ibutsu API endpoint::
+
+    pytest --ibutsu https://ibutsu.example.com
+
+  Note: In server mode, archives are created by default unless ``--ibutsu-no-archive`` is specified.
+
 Usage
 -----
 
@@ -98,3 +159,38 @@ Hooks
 -----
 
 The plugin has its own hooks. They are defined in ``newhooks.py``.
+
+Development
+-----------
+
+To set up for development, clone the repository and install in development mode::
+
+    git clone https://github.com/ibutsu/pytest-ibutsu.git
+    cd pytest-ibutsu
+    uv sync --group dev
+
+Running Tests with Coverage
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The project uses pytest with coverage reporting. To run the full test suite::
+
+    uv run pytest
+
+This will automatically generate:
+
+- Terminal coverage report
+- HTML coverage report in ``htmlcov/``
+- XML coverage report as ``coverage.xml``
+
+Coverage configuration is in ``pyproject.toml`` under ``[tool.coverage.*]`` sections.
+
+The minimum coverage threshold is set to 74%. Tests will fail if coverage falls below this threshold.
+
+To run tests without coverage (faster for development)::
+
+    uv run pytest --no-cov
+
+To view the HTML coverage report::
+
+    open htmlcov/index.html  # macOS
+    xdg-open htmlcov/index.html  # Linux

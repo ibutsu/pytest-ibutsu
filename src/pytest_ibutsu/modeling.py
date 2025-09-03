@@ -20,6 +20,16 @@ from pytest import ExceptionInfo
 
 log = logging.getLogger(__name__)
 
+
+def validate_uuid_string(uuid_string: str) -> bool:
+    """Validate if a string is a proper UUID format."""
+    try:
+        uuid.UUID(uuid_string)
+        return True
+    except ValueError:
+        return False
+
+
 # noinspection PyArgumentList
 ibutsu_converter = make_json_converter()
 # we need this due to broken structure - replace wit tagged union and/or consistent handling
@@ -133,7 +143,7 @@ class TestRun:
         return attrs.asdict(
             self,
             filter=lambda attr, _: not attr.name.startswith("_"),
-            value_serializer=_serializer,
+            value_serializer=_serializer,  # type: ignore[call-arg]
         )
 
     @staticmethod
@@ -400,10 +410,9 @@ class TestResult:
     def attach_artifact(self, name: str, content: bytes | str) -> None:
         self._artifacts[name] = content
 
-    def to_dict(self) -> dict:
-        # noinspection PyTypeChecker
+    def to_dict(self) -> dict[str, Any]:
         return attrs.asdict(
             self,
             filter=lambda attr, _: not attr.name.startswith("_"),
-            value_serializer=_serializer,
+            value_serializer=_serializer,  # type: ignore[call-arg]
         )

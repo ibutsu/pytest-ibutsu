@@ -8,6 +8,7 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
   "Topic :: Software Development :: Testing",
@@ -16,12 +17,12 @@ dependencies = [
   "attrs",
   "cattrs",
   "ibutsu-client>=2.1",
-  "pytest>=7.1",
+  "pytest",
 ]
 description = "A plugin to sent pytest results to an Ibutsu server"
 dynamic = ["version"]
 license = "MIT"
-maintainers = [{name = "Raoul Snyman"}, {name = "Dmitry Misharov"}]
+maintainers = [{name = "Raoul Snyman"}, {name = "Dmitry Misharov"}, {name = "Mike Shriver"}]
 name = "pytest-ibutsu"
 readme = "README.rst"
 requires-python = ">=3.11"
@@ -34,8 +35,14 @@ Tracker = "https://github.com/ibutsu/pytest-ibutsu/issues"
 test = [
   "pytest-subtests",
   "pytest-xdist",
-  "python-jose>=3.3.0",
-  "mypy>=1.15"
+  "python-jose",
+  "pytest-cov",
+  "coverage[toml]",
+  "boto3",
+]
+
+s3 = [
+  "boto3",
 ]
 
 [project.entry-points.pytest11]
@@ -57,6 +64,12 @@ include = ["/src"]
 [tool.hatch.build.targets.wheel]
 packages = ["/src/pytest_ibutsu"]
 
+[tool.hatch.envs.hatch-test]
+extra-dependencies = ["pytest-ibutsu[test]"]
+
+[[tool.hatch.envs.hatch-test.matrix]]
+python = ["3.11", "3.12", "3.13"]
+
 [tool.uv]
 default-groups = ["test"]
 
@@ -67,3 +80,51 @@ disallow_untyped_defs = true
 module = ["ibutsu_client.*"]
 ignore_missing_imports=true
 follow_untyped_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "--cov=pytest_ibutsu",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+    "--cov-report=html",
+    "--cov-branch",
+    "--cov-fail-under=74",
+    "-v"
+]
+
+[tool.coverage.run]
+source = ["src/pytest_ibutsu"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/conftest.py",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+    "TYPE_CHECKING",
+]
+show_missing = true
+precision = 2
+skip_covered = false
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.coverage.xml]
+output = "coverage.xml"

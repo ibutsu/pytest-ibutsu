@@ -20,6 +20,7 @@ from .archiver import dump_to_archive
 from .modeling import TestResult
 from .modeling import TestRun
 from .sender import send_data_to_ibutsu
+from .s3_uploader import upload_to_s3
 
 if TYPE_CHECKING:
     import xdist.workermanage  # type: ignore[import-untyped]
@@ -64,15 +65,15 @@ class IbutsuPlugin:
     def __init__(
         self,
         enabled: bool,
-        ibutsu_server: str,
+        ibutsu_mode: str,
         ibutsu_token: str | None,
         ibutsu_source: str,
         ibutsu_project: str,
         ibutsu_no_archive: bool,
-        extra_data: dict[str, Any],
+        extra_data: dict,
         run: TestRun,
     ) -> None:
-        self.ibutsu_server = ibutsu_server
+        self.ibutsu_mode = ibutsu_mode
         self.ibutsu_token = ibutsu_token
         self.ibutsu_source = ibutsu_source
         self.ibutsu_project = ibutsu_project
@@ -85,6 +86,28 @@ class IbutsuPlugin:
         self.results: dict[str, TestResult] = {}
         if self.ibutsu_token and self.is_token_expired(self.ibutsu_token):
             raise ExpiredTokenError("Your token has expired.")
+
+    @property
+    def is_archive_mode(self) -> bool:
+        """Returns True if mode is 'archive'."""
+        return self.ibutsu_mode == "archive"
+
+    @property
+    def is_s3_mode(self) -> bool:
+        """Returns True if mode is 's3'."""
+        return self.ibutsu_mode == "s3"
+
+    @property
+    def is_server_mode(self) -> bool:
+        """Returns True if mode is a server URL (not 'archive' or 's3')."""
+        return (
+            self.ibutsu_mode not in ("archive", "s3") and self.ibutsu_mode is not None
+        )
+
+    @property
+    def ibutsu_server(self) -> str:
+        """Returns the server URL for backward compatibility."""
+        return self.ibutsu_mode if self.is_server_mode else ""
 
     def is_token_expired(self, token: str) -> bool:
         """Validate a JWT token"""
@@ -114,31 +137,39 @@ class IbutsuPlugin:
 
     @classmethod
     def from_config(cls, config: pytest.Config) -> IbutsuPlugin:
-        def ini_or_option(name: str) -> Any:
-            return config.getini(name) or config.getoption(name)
-
-        ibutsu_server = ini_or_option("ibutsu_server")
-        ibutsu_token = ini_or_option("ibutsu_token")
-        ibutsu_source = ini_or_option("ibutsu_source")
+        # Get the ibutsu mode from command line or ini file
+        ibutsu_mode = config.getoption("ibutsu_mode") or config.getini("ibutsu_server")
+        ibutsu_token = config.getini("ibutsu_token") or config.getoption("ibutsu_token")
+        ibutsu_source = config.getini("ibutsu_source") or config.getoption(
+            "ibutsu_source"
+        )
         extra_data = cls._parse_data_option(config.getoption("ibutsu_data") or [])
-        ibutsu_project = os.getenv("IBUTSU_PROJECT") or ini_or_option("ibutsu_project")
-        run_id = ini_or_option("ibutsu_run_id")
-        ibutsu_no_archive = ini_or_option("ibutsu_no_archive")
+        ibutsu_project = (
+            os.getenv("IBUTSU_PROJECT")
+            or config.getini("ibutsu_project")
+            or config.getoption("ibutsu_project")
+        )
+        run_id = config.getini("ibutsu_run_id") or config.getoption("ibutsu_run_id")
+        ibutsu_no_archive = config.getini("ibutsu_no_archive") or config.getoption(
+            "ibutsu_no_archive"
+        )
 
-        if ibutsu_server and not ibutsu_project:
+        # Validate that project is required for server mode
+        if ibutsu_mode and ibutsu_mode not in ("archive", "s3") and not ibutsu_project:
             raise pytest.UsageError(
                 "Ibutsu project is required, use --ibutsu-project, "
                 "-o ibutsu_project or the IBUTSU_PROJECT environment variable"
             )
+
         run = TestRun(
             id=run_id,
             source=ibutsu_source,
             metadata={"project": ibutsu_project, **extra_data},
         )
-        enabled = False if config.option.collectonly else bool(ibutsu_server)
+        enabled = False if config.option.collectonly else bool(ibutsu_mode)
         return cls(
             enabled,
-            ibutsu_server,
+            ibutsu_mode,
             ibutsu_token,
             ibutsu_source,
             ibutsu_project,
@@ -294,9 +325,20 @@ class IbutsuPlugin:
         session.config.hook.pytest_ibutsu_before_shutdown(
             config=session.config, ibutsu=self
         )
-        if self.ibutsu_server == "archive" or not self.ibutsu_no_archive:
+
+        # Handle the three operation modes
+        if self.is_archive_mode or (self.is_s3_mode and not self.ibutsu_no_archive):
+            # Archive mode or S3 mode: always create archive
             dump_to_archive(self)
-        if self.ibutsu_server != "archive":
+
+        if self.is_s3_mode:
+            # S3 mode: upload archive to S3
+            upload_to_s3(self)
+        elif self.is_server_mode:
+            # Server mode: send directly to Ibutsu API
+            # Create archive if not disabled
+            if not self.ibutsu_no_archive:
+                dump_to_archive(self)
             send_data_to_ibutsu(self)
 
     def pytest_addhooks(self, pluginmanager: pytest.PytestPluginManager) -> None:
@@ -322,11 +364,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("ibutsu")
     group.addoption(
         "--ibutsu",
-        dest="ibutsu_server",
+        dest="ibutsu_mode",
         action="store",
-        metavar="URL",
+        metavar="MODE",
         default=None,
-        help="URL for the Ibutsu server",
+        help="Ibutsu mode: 'archive' to create archive, 's3' to create archive and upload to S3, or URL for direct API upload",
     )
     group.addoption(
         "--ibutsu-token",
@@ -358,7 +400,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store",
         metavar="PROJECT",
         default=None,
-        help="project id or name",
+        help="project id or name - Required",
     )
     group.addoption(
         "--ibutsu-run-id",
