@@ -84,7 +84,7 @@ class IbutsuPlugin:
         self.workers_runs: list[TestRun] = []
         self.workers_enabled: list[bool] = []
         self.results: dict[str, TestResult] = {}
-        if self.ibutsu_token is not None and self.is_token_expired(self.ibutsu_token):
+        if self.ibutsu_token and self.is_token_expired(self.ibutsu_token):
             raise ExpiredTokenError("Your token has expired.")
 
     @property
