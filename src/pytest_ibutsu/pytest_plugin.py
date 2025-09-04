@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import pickle
 import re
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
 UUID_REGEX = re.compile(
     r"[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}"
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ExpiredTokenError(Exception):
@@ -397,6 +400,9 @@ class IbutsuPlugin:
         elif self.is_server_mode:
             # Server mode: send directly to Ibutsu API
             # Create archive if not disabled
+            logger.info(
+                f"Sending data to Ibutsu API {self.ibutsu_mode} for run {self.run.id}"
+            )
             if not self.ibutsu_no_archive:
                 dump_to_archive(self)
             send_data_to_ibutsu(self)
