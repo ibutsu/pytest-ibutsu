@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import time
 import uuid
@@ -11,6 +10,7 @@ from typing import ClassVar
 from typing import Mapping
 from typing import TypedDict
 from types import FunctionType
+import types
 
 from cattrs.preconf.json import make_converter as make_json_converter
 import pytest
@@ -30,10 +30,86 @@ def validate_uuid_string(uuid_string: str) -> bool:
         return False
 
 
+def _configure_descriptor_unstructure_hooks(converter: Any) -> None:
+    """Configure unstructure hooks for various descriptor and function types.
+
+    This integrates with cattrs preconf converters to handle Python objects
+    that cannot be JSON serialized by default, following the cattrs pattern
+    of registering custom unstructure hooks.
+
+    Args:
+        converter: A cattrs converter instance to register hooks on
+    """
+
+    def unstructure_property(obj: property) -> str:
+        """Unstructure property objects."""
+        return f"{obj.__class__.__name__}: '{obj.fget.__name__}'"
+
+    def unstructure_classmethod_staticmethod(obj: classmethod | staticmethod) -> str:
+        """Unstructure classmethod and staticmethod objects."""
+        qualname_parts = obj.__func__.__qualname__.split(".")
+        class_name = qualname_parts[-2] if len(qualname_parts) >= 2 else "UnknownClass"
+        return f"{obj.__class__.__name__}: '{obj.__func__.__name__}' of '{class_name}'"
+
+    def unstructure_descriptor(
+        obj: types.MemberDescriptorType
+        | types.MethodDescriptorType
+        | types.WrapperDescriptorType
+        | types.GetSetDescriptorType
+        | types.ClassMethodDescriptorType,
+    ) -> str:
+        """Unstructure various descriptor types."""
+        return f"descriptor: '{obj.__name__}' of '{obj.__objclass__.__name__}'"
+
+    def unstructure_builtin(
+        obj: types.BuiltinFunctionType | types.BuiltinMethodType,
+    ) -> str:
+        """Unstructure builtin functions and methods."""
+        return f"builtin: '{obj.__name__}'"
+
+    def unstructure_method(obj: types.MethodType) -> str:
+        """Unstructure bound methods."""
+        return f"method: '{obj.__name__}' of '{obj.__self__.__class__.__name__}'"
+
+    def unstructure_function(obj: types.FunctionType) -> str:
+        """Unstructure regular functions."""
+        return f"function: '{obj.__name__}', args: {str(obj.__code__.co_varnames)}"
+
+    # Register all unstructure hooks with the converter
+    converter.register_unstructure_hook(property, unstructure_property)
+    converter.register_unstructure_hook(
+        classmethod, unstructure_classmethod_staticmethod
+    )
+    converter.register_unstructure_hook(
+        staticmethod, unstructure_classmethod_staticmethod
+    )
+    converter.register_unstructure_hook(
+        types.MemberDescriptorType, unstructure_descriptor
+    )
+    converter.register_unstructure_hook(
+        types.MethodDescriptorType, unstructure_descriptor
+    )
+    converter.register_unstructure_hook(
+        types.WrapperDescriptorType, unstructure_descriptor
+    )
+    converter.register_unstructure_hook(
+        types.GetSetDescriptorType, unstructure_descriptor
+    )
+    converter.register_unstructure_hook(
+        types.ClassMethodDescriptorType, unstructure_descriptor
+    )
+    converter.register_unstructure_hook(types.BuiltinFunctionType, unstructure_builtin)
+    converter.register_unstructure_hook(types.BuiltinMethodType, unstructure_builtin)
+    converter.register_unstructure_hook(types.MethodType, unstructure_method)
+    converter.register_unstructure_hook(types.FunctionType, unstructure_function)
+
+
 # noinspection PyArgumentList
 ibutsu_converter = make_json_converter()
 # we need this due to broken structure - replace wit tagged union and/or consistent handling
 ibutsu_converter.register_structure_hook(str | bytes, lambda o, _: o)
+# Configure custom unstructure hooks for descriptor types that cannot be JSON serialized
+_configure_descriptor_unstructure_hooks(ibutsu_converter)
 
 
 class ItemMarker(TypedDict):
@@ -55,17 +131,24 @@ def _safe_string(obj: object) -> str:
     return obj.encode("ascii", "xmlcharrefreplace").decode("ascii")
 
 
+# Legacy function kept for backward compatibility in tests
+# New code should use ibutsu_converter.unstructure() directly
 def _json_serializer(obj: object | FunctionType) -> str:
-    if callable(obj) and hasattr(obj, "__code__"):
-        return f"function: '{obj.__name__}', args: {str(obj.__code__.co_varnames)}"
-    else:
-        return str(obj)
+    """Legacy function for backward compatibility. Use ibutsu_converter.unstructure() instead."""
+    return ibutsu_converter.unstructure(obj)
 
 
-# todo: replace this by a more controlled version
+def _metadata_unstructure_hook(value: dict[str, Any]) -> dict[str, Any]:
+    """Custom unstructure hook for metadata that ensures deep conversion of all nested objects."""
+    return ibutsu_converter.unstructure(value)
+
+
+# Enhanced attrs serializer using cattrs converter
 def _serializer(inst: type, field: attrs.Attribute[Any], value: Any) -> Any:
+    """Enhanced serializer using cattrs preconf converter integration."""
     if field and field.name == "metadata":
-        return json.loads(json.dumps(value, default=_json_serializer))
+        # Use cattrs converter to unstructure the metadata deeply
+        return _metadata_unstructure_hook(value)
     else:
         return value
 
@@ -140,11 +223,11 @@ class TestRun:
         self._artifacts[name] = content
 
     def to_dict(self) -> dict[str, Any]:
-        return attrs.asdict(
-            self,
-            filter=lambda attr, _: not attr.name.startswith("_"),
-            value_serializer=_serializer,  # type: ignore[call-arg]
-        )
+        """Convert TestRun to dictionary using cattrs preconf converter."""
+        # Use cattrs unstructure with custom filtering for private attributes
+        unstructured = ibutsu_converter.unstructure(self)
+        # Filter out private attributes (those starting with '_')
+        return {k: v for k, v in unstructured.items() if not k.startswith("_")}
 
     @staticmethod
     def get_metadata(runs: list[TestRun]) -> dict[str, Any]:
@@ -411,8 +494,8 @@ class TestResult:
         self._artifacts[name] = content
 
     def to_dict(self) -> dict[str, Any]:
-        return attrs.asdict(
-            self,
-            filter=lambda attr, _: not attr.name.startswith("_"),
-            value_serializer=_serializer,  # type: ignore[call-arg]
-        )
+        """Convert TestResult to dictionary using cattrs preconf converter."""
+        # Use cattrs unstructure with custom filtering for private attributes
+        unstructured = ibutsu_converter.unstructure(self)
+        # Filter out private attributes (those starting with '_')
+        return {k: v for k, v in unstructured.items() if not k.startswith("_")}
