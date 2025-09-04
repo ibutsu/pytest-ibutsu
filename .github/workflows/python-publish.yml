@@ -18,7 +18,7 @@ jobs:
       - name: Build artifacts
         run: hatch build
       - name: Deploy to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.12.4
+        uses: pypa/gh-action-pypi-publish@v1.13.0
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           print-hash: true
