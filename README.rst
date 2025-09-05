@@ -134,7 +134,7 @@ The following environment variables are supported:
     # supports dotted notation
     export IBUTSU_DATA="key.subkey=value"
 
-- ``IBUTSU_NO_ARCHIVE``: Disable archive creation (equivalent to ``--ibutsu-no-archive``)::
+- ``IBUTSU_NO_ARCHIVE``: Disable archive creation (equivalent to ``--ibutsu-no-archive``), accepts python truthy values.::
 
     export IBUTSU_NO_ARCHIVE=true
 
