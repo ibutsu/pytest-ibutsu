@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .modeling import validate_uuid_string
+
+logger = logging.getLogger(__name__)
 
 try:
     import boto3
@@ -69,7 +72,7 @@ class S3Uploader:
         directory_path = Path(directory)
 
         if not directory_path.exists():
-            print(f"Directory {directory} does not exist")
+            logger.warning(f"Directory {directory} does not exist")
             return []
 
         return [
@@ -102,10 +105,12 @@ class S3Uploader:
             if e.response["Error"]["Code"] == "404":
                 return False
             # For other errors, log and return False to be safe
-            print(f"Error checking S3 file existence for {key}: {e}")
+            logger.warning(f"Error checking S3 file existence for {key}: {e}")
             return False
         except Exception as e:
-            print(f"Unexpected error checking S3 file existence for {key}: {e}")
+            logger.warning(
+                f"Unexpected error checking S3 file existence for {key}: {e}"
+            )
             return False
 
     def upload_file(self, file_path: Path, key: str | None = None) -> str | None:
@@ -132,13 +137,13 @@ class S3Uploader:
 
         # Check if file already exists in S3 with same name and size
         if self._file_exists_in_s3(s3_key, local_file_size):
-            print(
+            logger.debug(
                 f"Pytest-Ibutsu: Skipping {file_path}, exists in S3 with same size: {s3_url}"
             )
             return None
 
         try:
-            print(f"Pytest-Ibutsu: Uploading {file_path} to {self.bucket_name}")
+            logger.debug(f"Pytest-Ibutsu: Uploading {file_path} to {self.bucket_name}")
 
             if self.s3_client is None:
                 raise S3UploadError("S3 client not initialized")
@@ -152,17 +157,17 @@ class S3Uploader:
                 )
 
             # Construct S3 URL
-            print(f"Pytest-Ibutsu: Upload complete: {s3_url}")
+            logger.debug(f"Pytest-Ibutsu: Upload complete: {s3_url}")
 
             return s3_url
 
         except (BotoCoreError, ClientError) as e:
             error_msg = f"Failed to upload {file_path} to S3: {e}"
-            print(f"Error: {error_msg}")
+            logger.exception(f"Error: {error_msg}")
             raise S3UploadError(error_msg) from e
         except Exception as e:
             error_msg = f"Unexpected error uploading {file_path}: {e}"
-            print(f"Error: {error_msg}")
+            logger.exception(f"Error: {error_msg}")
             raise S3UploadError(error_msg) from e
 
     def upload_archives(self, directory: str = ".") -> list[str]:
@@ -175,11 +180,11 @@ class S3Uploader:
             List of S3 URLs for uploaded files
         """
 
-        print(f"Scanning {directory} for files")
+        logger.debug(f"Scanning {directory} for files")
         files_to_upload = self.find_uuid_tar_gz_files(directory)
 
         if not files_to_upload:
-            print(f"No files found in {directory}")
+            logger.debug(f"No files found in {directory}")
             return []
 
         uploaded_urls = []
@@ -192,7 +197,7 @@ class S3Uploader:
                 # Continue uploading other files even if one fails
                 continue
 
-        print(
+        logger.info(
             f"Successfully uploaded {len(uploaded_urls)} out of {len(files_to_upload)} files"
         )
         return uploaded_urls
@@ -212,6 +217,6 @@ def upload_to_s3(
         uploader = S3Uploader()
         uploader.upload_archives(directory)
     except S3UploadError as e:
-        print(f"S3 upload failed: {e}")
+        logger.exception(f"S3 upload failed: {e}")
     except Exception as e:
-        print(f"Unexpected error during S3 upload: {e}")
+        logger.exception(f"Unexpected error during S3 upload: {e}")

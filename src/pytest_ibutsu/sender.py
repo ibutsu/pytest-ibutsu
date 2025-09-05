@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
 from http.client import BadStatusLine
@@ -44,6 +45,8 @@ RETRY_BACKOFF_FACTOR = 2.0
 
 CA_BUNDLE_ENVS = ["REQUESTS_CA_BUNDLE", "IBUTSU_CA_BUNDLE"]
 
+logger = logging.getLogger(__name__)
+
 
 class TooManyRetriesError(Exception):
     pass
@@ -55,6 +58,7 @@ P = ParamSpec("P")
 
 class IbutsuSender:
     def __init__(self, server_url: str, token: str | None = None):
+        self.server_url = server_url
         self._has_server_error = False
         self._server_error_tbs: list[str] = []
         self._sender_cache = []  # type: ignore
@@ -71,7 +75,7 @@ class IbutsuSender:
 
     @classmethod
     def from_ibutsu_plugin(cls, ibutsu: IbutsuPlugin) -> IbutsuSender:
-        print(f"Ibutsu server: {ibutsu.ibutsu_server}")
+        logger.info(f"Ibutsu server: {ibutsu.ibutsu_server}")
         ibutsu_server = ibutsu.ibutsu_server
         if ibutsu.ibutsu_server.endswith("/"):
             ibutsu_server = ibutsu_server[:-1]
@@ -110,18 +114,22 @@ class IbutsuSender:
                         delay = RETRY_BASE_DELAY * (
                             RETRY_BACKOFF_FACTOR ** (retries - 1)
                         )
-                        print(
+                        logger.debug(
                             f"Network error (attempt {retries}/{MAX_CALL_RETRIES}): {e.__class__.__name__}: {e}. "
                             f"Retrying in {delay:.1f} seconds..."
                         )
                         time.sleep(delay)
                     else:
+                        logger.exception(
+                            f"Network error (final attempt {retries}/{MAX_CALL_RETRIES}): {e.__class__.__name__}: {e}. "
+                        )
                         raise TooManyRetriesError(
                             f"Too many retries ({MAX_CALL_RETRIES}) while trying to call API"
                             f"Network error (final attempt {retries}/{MAX_CALL_RETRIES}): {e.__class__.__name__}: {e}. "
                         )
 
         except (MaxRetryError, ApiException, TooManyRetriesError) as e:
+            logger.exception(f"API call failed: {e}")
             self._has_server_error = self._has_server_error or True
             self._server_error_tbs.append(str(e))
 
@@ -138,8 +146,10 @@ class IbutsuSender:
 
     def add_or_update_run(self, run: TestRun) -> None:
         if self.does_run_exist(run):
+            logger.debug(f"Updating run {run.id}")
             self._make_call(self.run_api.update_run, id=run.id, run=run.to_dict())
         else:
+            logger.debug(f"Adding run {run.id}")
             self._make_call(self.run_api.add_run, run=run.to_dict())
 
     def upload_artifacts(self, r: TestResult | TestRun) -> None:
@@ -153,6 +163,7 @@ class IbutsuSender:
         return bool(self._make_call(self.run_api.get_run, id=run.id))
 
     def add_result(self, result: TestResult) -> None:
+        logger.debug(f"Adding result {result.id}")
         self._make_call(self.result_api.add_result, result=result.to_dict())
 
     def _upload_artifact(
@@ -162,6 +173,7 @@ class IbutsuSender:
         buffered_reader, payload_size = self._get_buffered_reader(data, filename)
         if payload_size < UPLOAD_LIMIT:
             try:
+                logger.debug(f"Uploading artifact {filename} for {id_}")
                 self._make_call(
                     self.artifact_api.upload_artifact,
                     filename,
@@ -170,16 +182,17 @@ class IbutsuSender:
                     **kwargs,
                 )
             except ApiValueError:
-                print(
+                logger.warning(
                     f"Uploading artifact '{filename}' failed as the file closed prematurely."
                 )
         else:
-            print("Artifact size is greater than upload limit")
+            logger.warning("Artifact size is greater than upload limit")
         buffered_reader.close()
 
 
 def send_data_to_ibutsu(ibutsu_plugin: IbutsuPlugin) -> None:
     sender = IbutsuSender.from_ibutsu_plugin(ibutsu_plugin)
+    logger.info(f"Sending data to Ibutsu API {sender.server_url}")
     sender.add_or_update_run(ibutsu_plugin.run)
     sender.upload_artifacts(ibutsu_plugin.run)
     for result in ibutsu_plugin.results.values():
@@ -189,6 +202,6 @@ def send_data_to_ibutsu(ibutsu_plugin: IbutsuPlugin) -> None:
     # https://github.com/ibutsu/pytest-ibutsu/issues/61
     sender.add_or_update_run(ibutsu_plugin.run)
     if not sender._has_server_error:
-        print(
+        logger.info(
             f"Results can be viewed on: {sender.frontend_url}/runs/{ibutsu_plugin.run.id}"
         )

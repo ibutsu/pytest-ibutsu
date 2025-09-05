@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import tarfile
 import time
 from contextlib import AbstractContextManager
@@ -12,8 +13,9 @@ if TYPE_CHECKING:
     from .pytest_plugin import IbutsuPlugin
 
 
-from .modeling import TestResult
-from .modeling import TestRun
+from .modeling import TestResult, TestRun, ibutsu_converter, _json_serializer
+
+logger = logging.getLogger(__name__)
 
 
 class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
@@ -40,7 +42,30 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
 
     def add_result(self, run: TestRun, result: TestResult) -> None:
         self.add_dir(f"{run.id}/{result.id}")
-        content = json.dumps(result.to_dict()).encode("utf-8")
+        # Use cattrs converter for robust serialization with fallback protection
+        try:
+            # First, use cattrs to unstructure the result directly
+            unstructured_result = ibutsu_converter.unstructure(result)
+            # Filter out private attributes
+            filtered_result = {
+                k: v for k, v in unstructured_result.items() if not k.startswith("_")
+            }
+            content = json.dumps(filtered_result).encode("utf-8")
+        except (TypeError, ValueError) as e:
+            # Fallback: use to_dict() with custom serializer
+            try:
+                content = json.dumps(result.to_dict(), default=_json_serializer).encode(
+                    "utf-8"
+                )
+            except Exception as fallback_error:
+                # Last resort: log the error and use string representation
+                logger.exception(
+                    f"Failed to serialize TestResult {result.id}: {e}, fallback error: {fallback_error}"
+                )
+                content = json.dumps(
+                    {"error": "serialization_failed", "result_id": result.id}
+                ).encode("utf-8")
+
         self.add_file(f"{run.id}/{result.id}/result.json", content)
         for name, value in result._artifacts.items():
             try:
@@ -51,7 +76,30 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
 
     def add_run(self, run: TestRun) -> None:
         self.add_dir(run.id)
-        content = bytes(json.dumps(run.to_dict()), "utf-8")
+        # Use cattrs converter for robust serialization with fallback protection
+        try:
+            # First, use cattrs to unstructure the run directly
+            unstructured_run = ibutsu_converter.unstructure(run)
+            # Filter out private attributes
+            filtered_run = {
+                k: v for k, v in unstructured_run.items() if not k.startswith("_")
+            }
+            content = json.dumps(filtered_run).encode("utf-8")
+        except (TypeError, ValueError) as e:
+            # Fallback: use to_dict() with custom serializer
+            try:
+                content = json.dumps(run.to_dict(), default=_json_serializer).encode(
+                    "utf-8"
+                )
+            except Exception as fallback_error:
+                # Last resort: log the error and use string representation
+                logger.exception(
+                    f"Failed to serialize TestRun {run.id}: {e}, fallback error: {fallback_error}"
+                )
+                content = json.dumps(
+                    {"error": "serialization_failed", "run_id": run.id}
+                ).encode("utf-8")
+
         self.add_file(f"{run.id}/run.json", content)
         for name, value in run._artifacts.items():
             try:
@@ -73,4 +121,6 @@ def dump_to_archive(ibutsu_plugin: IbutsuPlugin) -> None:
         ibutsu_archiver.add_run(ibutsu_plugin.run)
         for result in ibutsu_plugin.results.values():
             ibutsu_archiver.add_result(ibutsu_plugin.run, result)
-    print(f"Pytest-Ibutsu: Saved results archive to {ibutsu_archiver.name}.tar.gz")
+    message = f"\nPytest-Ibutsu: Saved results archive to {ibutsu_archiver.name}.tar.gz"
+    logger.info(message)
+    print(message)

@@ -66,3 +66,5 @@ target/
 # Virtual environments
 .venv
 .ibutsu-env
+
+*.code-workspace
