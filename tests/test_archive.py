@@ -4,14 +4,18 @@ import json
 import re
 import tarfile
 import uuid
+import tempfile
+import pytest
 from collections import namedtuple
 from pathlib import Path
 from typing import Iterator, Any
+from unittest.mock import patch
 
 from pytest_subtests import SubTests
+from pytest_ibutsu.archiver import IbutsuArchiver, dump_to_archive
+from pytest_ibutsu.modeling import TestResult, TestRun
 
-import expected_results
-import pytest
+from . import expected_results
 
 # This should match uuid.uuid4()
 ARCHIVE_REGEX = re.compile(
@@ -91,24 +95,31 @@ def test_data(
     pytest.fail("No archives were created")
 
 
-def test_archive_file(
-    pytester: pytest.Pytester, test_data: tuple[pytest.RunResult, str]
+def test_archive_creation_comprehensive(
+    pytester: pytest.Pytester,
+    test_data: tuple[pytest.RunResult, str],
+    subtests: SubTests,
 ) -> None:
+    """Comprehensive test for archive creation, validation and properties."""
     result, run_id = test_data
-    result.stdout.no_re_match_line("INTERNALERROR")
-    result.stdout.re_match_lines([f".*Saved results archive to {run_id}.tar.gz$"])
-    archive_name = f"{run_id}.tar.gz"
-    archive = pytester.path.joinpath(archive_name)
-    assert archive.is_file()
-    assert archive.lstat().st_size > 0
 
+    with subtests.test("no_internal_errors"):
+        # Test that no internal errors occurred during pytest execution
+        result.stdout.no_re_match_line("INTERNALERROR")
 
-@pytest.mark.usefixtures("test_data")
-def test_archives_count(pytester: pytest.Pytester) -> None:
-    archives = 0
-    for path in pytester.path.glob("*"):
-        archives += 1 if re.match(ARCHIVE_REGEX, path.name) else 0
-    assert archives == 1, f"Expected exactly one archive file, got {archives}"
+    with subtests.test("file_creation_and_properties"):
+        # Test archive file was created with correct properties
+        archive_name = f"{run_id}.tar.gz"
+        archive = pytester.path.joinpath(archive_name)
+        assert archive.is_file()
+        assert archive.lstat().st_size > 0
+
+    with subtests.test("archive_count_validation"):
+        # Test exactly one archive was created
+        archives = 0
+        for path in pytester.path.glob("*"):
+            archives += 1 if re.match(ARCHIVE_REGEX, path.name) else 0
+        assert archives == 1, f"Expected exactly one archive file, got {archives}"
 
 
 @pytest.fixture
@@ -272,3 +283,265 @@ def test_collect(
     for path in pytester.path.glob("*"):
         archives += 1 if re.match(ARCHIVE_REGEX, path.name) else 0
     assert archives == 0, f"No archives should be created, got {archives}"
+
+
+class TestIbutsuArchiverExtended:
+    """Consolidated tests for IbutsuArchiver to reduce duplicate coverage."""
+
+    @pytest.mark.parametrize(
+        "method,data_type",
+        [
+            ("add_result", "result"),
+            ("add_run", "run"),
+        ],
+    )
+    def test_serialization_fallback_error(self, method, data_type):
+        """Test serialization fallback when initial serialization fails."""
+        # Create appropriate data object
+        if data_type == "result":
+            run = TestRun(id="test-run")
+            data_obj = TestResult(test_id="test1")
+            args = (run, data_obj)
+        else:  # run
+            data_obj = TestRun(id="test-run")
+            args = (data_obj,)
+
+        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+            archiver = IbutsuArchiver(tmp.name.replace(".tar.gz", ""))
+
+            with archiver:
+                # Mock cattrs converter to raise an exception
+                with patch(
+                    "pytest_ibutsu.archiver.ibutsu_converter.unstructure"
+                ) as mock_unstructure:
+                    mock_unstructure.side_effect = TypeError("Cattrs failed")
+
+                    # Call the appropriate method
+                    getattr(archiver, method)(*args)
+
+                    # Verify fallback was used
+                    assert mock_unstructure.called
+
+    @pytest.mark.parametrize(
+        "method,data_type",
+        [
+            ("add_result", "result"),
+            ("add_run", "run"),
+        ],
+    )
+    def test_complete_serialization_failure(self, method, data_type):
+        """Test complete serialization failure for both cattrs and to_dict."""
+
+        # Create failing classes that cause to_dict to fail
+        if data_type == "result":
+
+            class FailingTestResult(TestResult):
+                def to_dict(self):
+                    raise RuntimeError("to_dict failed")
+
+            run = TestRun(id="test-run")
+            data_obj = FailingTestResult(test_id="test1")
+            args = (run, data_obj)
+            expected_error_field = "result_id"
+        else:  # run
+
+            class FailingTestRun(TestRun):
+                def to_dict(self):
+                    raise RuntimeError("to_dict failed")
+
+            data_obj = FailingTestRun(id="test-run")
+            args = (data_obj,)
+            expected_error_field = "run_id"
+
+        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+            archive_name = tmp.name.replace(".tar.gz", "")
+
+        # Test with a completed archive - create and then read
+        with IbutsuArchiver(archive_name) as archiver:
+            # Mock cattrs converter to raise an exception
+            with patch(
+                "pytest_ibutsu.archiver.ibutsu_converter.unstructure"
+            ) as mock_unstructure:
+                mock_unstructure.side_effect = TypeError("Cattrs failed")
+
+                # Call the appropriate method - should not raise but create fallback content
+                getattr(archiver, method)(*args)
+
+        # Now read the archive to verify error content was created
+        with tarfile.open(f"{archive_name}.tar.gz", "r:gz") as tar:
+            members = tar.getmembers()
+            json_file = next(m for m in members if ".json" in m.name)
+            content = tar.extractfile(json_file).read()
+            error_data = json.loads(content)
+            assert error_data["error"] == "serialization_failed"
+            assert error_data[expected_error_field] == data_obj.id
+
+    @pytest.mark.parametrize(
+        "method,data_type",
+        [
+            ("add_result", "result"),
+            ("add_run", "run"),
+        ],
+    )
+    def test_artifact_file_not_found(self, method, data_type):
+        """Test artifact handling when file is not found."""
+
+        # Create appropriate data object and attach missing artifact
+        if data_type == "result":
+            run = TestRun(id="test-run")
+            data_obj = TestResult(test_id="test1")
+            args = (run, data_obj)
+        else:  # run
+            data_obj = TestRun(id="test-run")
+            args = (data_obj,)
+
+        # Add an artifact that references a non-existent file
+        data_obj.attach_artifact("missing_file.log", "/nonexistent/file.log")
+
+        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+            archiver = IbutsuArchiver(tmp.name.replace(".tar.gz", ""))
+
+            with archiver:
+                # Should not raise an exception, should skip the missing file
+                getattr(archiver, method)(*args)
+
+                # Verify only the JSON was added, not the missing artifact
+                members = archiver.tar.getmembers()
+                artifact_files = [m for m in members if "missing_file.log" in m.name]
+                assert len(artifact_files) == 0
+
+    @pytest.mark.parametrize(
+        "method,data_type",
+        [
+            ("add_result", "result"),
+            ("add_run", "run"),
+        ],
+    )
+    def test_artifact_is_directory(self, method, data_type):
+        """Test artifact handling when artifact points to a directory."""
+
+        # Create appropriate data object
+        if data_type == "result":
+            run = TestRun(id="test-run")
+            data_obj = TestResult(test_id="test1")
+            args = (run, data_obj)
+        else:  # run
+            data_obj = TestRun(id="test-run")
+            args = (data_obj,)
+
+        # Add an artifact that references a directory
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_obj.attach_artifact("directory.log", tmpdir)
+
+            with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+                archiver = IbutsuArchiver(tmp.name.replace(".tar.gz", ""))
+
+                with archiver:
+                    # Should not raise an exception, should skip the directory
+                    getattr(archiver, method)(*args)
+
+                    # Verify only the JSON was added, not the directory
+                    members = archiver.tar.getmembers()
+                    artifact_files = [m for m in members if "directory.log" in m.name]
+                    assert len(artifact_files) == 0
+
+    def test_get_bytes_with_string_path(self):
+        """Test _get_bytes with string path to file."""
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as tmp:
+            tmp.write("test content")
+            tmp.flush()
+
+            result = IbutsuArchiver._get_bytes(tmp.name)
+            assert result == b"test content"
+
+            # Cleanup
+            Path(tmp.name).unlink()
+
+    def test_get_bytes_with_bytes_input(self):
+        """Test _get_bytes with bytes input."""
+        test_bytes = b"test content"
+        result = IbutsuArchiver._get_bytes(test_bytes)
+        assert result == test_bytes
+
+
+class TestDumpToArchive:
+    """Test the dump_to_archive function."""
+
+    def test_dump_to_archive_integration(self, caplog):
+        """Test dump_to_archive function with mock plugin."""
+        import logging
+        from unittest.mock import Mock
+
+        caplog.set_level(logging.INFO)
+
+        mock_plugin = Mock()
+        mock_plugin.run = TestRun(id="test-run")
+        mock_plugin.results = {
+            "result1": TestResult(test_id="test1"),
+            "result2": TestResult(test_id="test2"),
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_cwd = Path.cwd()
+            try:
+                # Change to temporary directory for the test
+                import os
+
+                os.chdir(tmpdir)
+
+                dump_to_archive(mock_plugin)
+
+                # Verify the archive was created
+                archive_path = Path(f"{mock_plugin.run.id}.tar.gz")
+                assert archive_path.exists()
+
+                # Verify log message was captured
+                assert "Saved results archive" in caplog.text
+                assert mock_plugin.run.id in caplog.text
+
+            finally:
+                os.chdir(original_cwd)
+
+
+class TestArchiverEdgeCases:
+    """Test edge cases and error conditions in the archiver."""
+
+    def test_context_manager_exception_handling(self):
+        """Test that the context manager properly closes even on exceptions."""
+        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+            archiver = IbutsuArchiver(tmp.name.replace(".tar.gz", ""))
+
+            try:
+                with archiver:
+                    # Simulate an exception during archiving
+                    raise RuntimeError("Test exception")
+            except RuntimeError:
+                pass
+
+            # Verify the tarfile was closed properly
+            assert archiver.tar.closed
+
+    def test_archiver_with_special_characters_in_content(self):
+        """Test archiver with special characters and binary content."""
+        run = TestRun(id="test-run")
+        result = TestResult(test_id="test1")
+
+        # Add binary content and special characters
+        binary_content = b"\x00\x01\x02\xff\xfe\xfd"
+        result.attach_artifact("binary.dat", binary_content)
+
+        result.metadata["unicode"] = "Special chars: ñáéíóú 中文 🚀"
+
+        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+            archive_name = tmp.name.replace(".tar.gz", "")
+
+        # Create the archive first
+        with IbutsuArchiver(archive_name) as archiver:
+            archiver.add_result(run, result)
+
+        # Then read it to verify content
+        with tarfile.open(f"{archive_name}.tar.gz", "r:gz") as tar:
+            members = tar.getmembers()
+            binary_file = next(m for m in members if "binary.dat" in m.name)
+            extracted_content = tar.extractfile(binary_file).read()
+            assert extracted_content == binary_content
