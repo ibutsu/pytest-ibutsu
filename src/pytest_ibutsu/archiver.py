@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from .pytest_plugin import IbutsuPlugin
 
 
-from .modeling import TestResult, TestRun, ibutsu_converter, _json_serializer
+from .modeling import TestResult, TestRun, ibutsu_converter, _safe_string
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
         except (TypeError, ValueError) as e:
             # Fallback: use to_dict() with custom serializer
             try:
-                content = json.dumps(result.to_dict(), default=_json_serializer).encode(
+                content = json.dumps(result.to_dict(), default=_safe_string).encode(
                     "utf-8"
                 )
             except Exception as fallback_error:
@@ -88,7 +88,7 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
         except (TypeError, ValueError) as e:
             # Fallback: use to_dict() with custom serializer
             try:
-                content = json.dumps(run.to_dict(), default=_json_serializer).encode(
+                content = json.dumps(run.to_dict(), default=_safe_string).encode(
                     "utf-8"
                 )
             except Exception as fallback_error:
@@ -121,6 +121,5 @@ def dump_to_archive(ibutsu_plugin: IbutsuPlugin) -> None:
         ibutsu_archiver.add_run(ibutsu_plugin.run)
         for result in ibutsu_plugin.results.values():
             ibutsu_archiver.add_result(ibutsu_plugin.run, result)
-    message = f"\nPytest-Ibutsu: Saved results archive to {ibutsu_archiver.name}.tar.gz"
+    message = f"Pytest-Ibutsu: Saved results archive to {ibutsu_archiver.name}.tar.gz"
     logger.info(message)
-    print(message)

@@ -233,8 +233,7 @@ class TestIbutsuSender:
 
         sender._upload_artifact.assert_called_once()
 
-    @patch("builtins.print")
-    def test_upload_artifact_under_limit(self, mock_print):
+    def test_upload_artifact_under_limit(self):
         """Test _upload_artifact with file under size limit."""
         sender = IbutsuSender("http://example.com/api")
         sender._make_call = Mock()
@@ -247,8 +246,7 @@ class TestIbutsuSender:
         args, kwargs = sender._make_call.call_args
         assert args[0] == sender.artifact_api.upload_artifact
 
-    @patch("builtins.print")
-    def test_upload_artifact_over_limit(self, mock_print):
+    def test_upload_artifact_over_limit(self, caplog):
         """Test _upload_artifact with file over size limit."""
         sender = IbutsuSender("http://example.com/api")
         sender._make_call = Mock()
@@ -259,10 +257,9 @@ class TestIbutsuSender:
 
         # Should not call API due to size limit
         sender._make_call.assert_not_called()
-        mock_print.assert_called_with("Artifact size is greater than upload limit")
+        assert "Artifact size is greater than upload limit" in caplog.text
 
-    @patch("builtins.print")
-    def test_upload_artifact_api_value_error(self, mock_print):
+    def test_upload_artifact_api_value_error(self, caplog):
         """Test _upload_artifact handling ApiValueError."""
         from ibutsu_client.exceptions import ApiValueError
 
@@ -272,8 +269,9 @@ class TestIbutsuSender:
         content = b"test content"
         sender._upload_artifact("result-id", "test.txt", content, False)
 
-        mock_print.assert_called_with(
+        assert (
             "Uploading artifact 'test.txt' failed as the file closed prematurely."
+            in caplog.text
         )
 
 
@@ -304,41 +302,61 @@ class TestSendDataToIbutsu:
         assert mock_sender.upload_artifacts.call_count == 3  # Run + 2 results
         assert mock_sender.add_result.call_count == 2  # 2 results
 
-    @patch.object(IbutsuSender, "from_ibutsu_plugin")
-    @patch("builtins.print")
-    def test_send_data_success_with_frontend_url(self, mock_print, mock_from_plugin):
-        """Test successful data sending prints frontend URL."""
-        mock_sender = Mock()
-        mock_sender._has_server_error = False
-        mock_sender.frontend_url = "http://frontend.example.com"
-        mock_from_plugin.return_value = mock_sender
+    def test_send_data_success_with_frontend_url(self, caplog):
+        """Test successful data sending logs frontend URL."""
+        import logging
+        from unittest.mock import patch
+
+        caplog.set_level(logging.INFO)
+
+        # Create a real sender but mock its methods
+        sender = IbutsuSender("http://example.com/api")
+        sender._has_server_error = False
+
+        # Mock the health API to return the frontend URL
+        mock_health_info = Mock()
+        mock_health_info.frontend = "http://frontend.example.com"
+        sender.health_api.get_health_info = Mock(return_value=mock_health_info)
+
+        sender.add_or_update_run = Mock()
+        sender.upload_artifacts = Mock()
+        sender.add_result = Mock()
 
         mock_plugin = Mock()
         mock_plugin.run = TestRun(id="test-run-123")
         mock_plugin.results = {}
 
-        send_data_to_ibutsu(mock_plugin)
+        with patch.object(IbutsuSender, "from_ibutsu_plugin", return_value=sender):
+            send_data_to_ibutsu(mock_plugin)
 
-        mock_print.assert_called_with(
+        assert (
             "Results can be viewed on: http://frontend.example.com/runs/test-run-123"
+            in caplog.text
         )
 
-    @patch.object(IbutsuSender, "from_ibutsu_plugin")
-    @patch("builtins.print")
-    def test_send_data_with_server_error(self, mock_print, mock_from_plugin):
-        """Test data sending with server error doesn't print URL."""
-        mock_sender = Mock()
-        mock_sender._has_server_error = True
-        mock_from_plugin.return_value = mock_sender
+    def test_send_data_with_server_error(self, caplog):
+        """Test data sending with server error doesn't log URL."""
+        import logging
+        from unittest.mock import patch
+
+        caplog.set_level(logging.INFO)
+
+        # Create a real sender but mock its methods
+        sender = IbutsuSender("http://example.com/api")
+        sender._has_server_error = True
+        sender.add_or_update_run = Mock()
+        sender.upload_artifacts = Mock()
+        sender.add_result = Mock()
 
         mock_plugin = Mock()
         mock_plugin.run = TestRun(id="test-run")
         mock_plugin.results = {}
 
-        send_data_to_ibutsu(mock_plugin)
+        with patch.object(IbutsuSender, "from_ibutsu_plugin", return_value=sender):
+            send_data_to_ibutsu(mock_plugin)
 
-        # Should not print success message
-        mock_print.assert_not_called()
+        # Should not log success message
+        assert "Results can be viewed on:" not in caplog.text
 
 
 class TestCABundleHandling:
@@ -450,9 +468,12 @@ class TestSenderRetry:
         mock_sleep.assert_called_once_with(1.0)
 
     @patch("pytest_ibutsu.sender.time.sleep")
-    @patch("builtins.print")
-    def test_retry_logging(self, mock_print, mock_sleep):
+    def test_retry_logging(self, mock_sleep, caplog):
         """Test that retry attempts are properly logged."""
+        import logging
+
+        caplog.set_level(logging.DEBUG)
+
         sender = IbutsuSender("http://example.com/api")
         mock_method = Mock()
 
@@ -467,18 +488,14 @@ class TestSenderRetry:
 
         assert result == "success"
 
-        # Check that proper log messages were printed
-        print_calls = [call.args[0] for call in mock_print.call_args_list]
-
-        # Should have 2 retry log messages
-        assert len(print_calls) == 2
+        # Check that proper log messages were logged
         assert (
             "Network error (attempt 1/3): RemoteDisconnected: Connection failed. Retrying in 1.0 seconds..."
-            in print_calls[0]
+            in caplog.text
         )
         assert (
             "Network error (attempt 2/3): ProtocolError: Protocol failed. Retrying in 2.0 seconds..."
-            in print_calls[1]
+            in caplog.text
         )
 
     def test_non_retryable_exceptions_not_retried(self):

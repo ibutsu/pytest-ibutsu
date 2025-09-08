@@ -9,7 +9,6 @@ from typing import Any
 from typing import ClassVar
 from typing import Mapping
 from typing import TypedDict
-from types import FunctionType
 import types
 
 from cattrs.preconf.json import make_converter as make_json_converter
@@ -43,7 +42,7 @@ def _configure_descriptor_unstructure_hooks(converter: Any) -> None:
 
     def unstructure_property(obj: property) -> str:
         """Unstructure property objects."""
-        return f"{obj.__class__.__name__}: '{obj.fget.__name__}'"
+        return f"{obj.__class__.__name__}: '{obj.fget.__name__ if obj.fget is not None else '_prop_fget_empty'}'"
 
     def unstructure_classmethod_staticmethod(obj: classmethod | staticmethod) -> str:
         """Unstructure classmethod and staticmethod objects."""
@@ -129,13 +128,6 @@ def _safe_string(obj: object) -> str:
     if isinstance(obj, bytes):
         obj = obj.decode("utf-8", "ignore")
     return obj.encode("ascii", "xmlcharrefreplace").decode("ascii")
-
-
-# Legacy function kept for backward compatibility in tests
-# New code should use ibutsu_converter.unstructure() directly
-def _json_serializer(obj: object | FunctionType) -> str:
-    """Legacy function for backward compatibility. Use ibutsu_converter.unstructure() instead."""
-    return ibutsu_converter.unstructure(obj)
 
 
 def _metadata_unstructure_hook(value: dict[str, Any]) -> dict[str, Any]:
