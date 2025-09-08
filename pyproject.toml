@@ -31,6 +31,11 @@ requires-python = ">=3.11"
 Source = "https://github.com/ibutsu/pytest-ibutsu"
 Tracker = "https://github.com/ibutsu/pytest-ibutsu/issues"
 
+[project.optional-dependencies]
+s3 = [
+  "boto3",
+]
+
 [dependency-groups]
 test = [
   "pytest-subtests",
@@ -38,10 +43,6 @@ test = [
   "python-jose",
   "pytest-cov",
   "coverage[toml]",
-  "boto3",
-]
-
-s3 = [
   "boto3",
 ]
 
