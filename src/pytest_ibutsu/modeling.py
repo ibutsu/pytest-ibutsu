@@ -29,86 +29,69 @@ def validate_uuid_string(uuid_string: str) -> bool:
         return False
 
 
-def _configure_descriptor_unstructure_hooks(converter: Any) -> None:
-    """Configure unstructure hooks for various descriptor and function types.
+def _simple_unstructure_hook(obj: Any) -> str:
+    """Simple unstructure hook that converts any non-serializable object to its string representation.
 
-    This integrates with cattrs preconf converters to handle Python objects
-    that cannot be JSON serialized by default, following the cattrs pattern
-    of registering custom unstructure hooks.
+    This provides a much simpler approach than custom hooks for each type.
+    Uses Python's built-in repr() which provides useful string representations
+    for most objects including descriptors, functions, methods, etc.
+
+    Args:
+        obj: Any Python object that needs to be unstructured
+
+    Returns:
+        String representation of the object
+    """
+    try:
+        # Try repr() first as it's most informative
+        return repr(obj)
+    except Exception:
+        # Fallback to str() if repr() fails
+        try:
+            return str(obj)
+        except Exception:
+            # Last resort - use the class name and object id
+            return f"<{obj.__class__.__name__} object at {hex(id(obj))}>"
+
+
+def _configure_simple_converter(converter: Any) -> None:
+    """Configure a simple converter that handles any non-serializable object with string representation.
+
+    This replaces the complex custom hooks with a single simple approach that relies on
+    Python's built-in string representations.
 
     Args:
         converter: A cattrs converter instance to register hooks on
     """
+    # Register a single hook that catches all non-serializable types and converts them to strings
+    # This is much simpler than having specific hooks for each type
 
-    def unstructure_property(obj: property) -> str:
-        """Unstructure property objects."""
-        return f"{obj.__class__.__name__}: '{obj.fget.__name__ if obj.fget is not None else '_prop_fget_empty'}'"
+    # Common non-serializable types that we want to convert to strings
+    non_serializable_types = [
+        property,
+        classmethod,
+        staticmethod,
+        types.MemberDescriptorType,
+        types.MethodDescriptorType,
+        types.WrapperDescriptorType,
+        types.GetSetDescriptorType,
+        types.ClassMethodDescriptorType,
+        types.BuiltinFunctionType,
+        types.BuiltinMethodType,
+        types.MethodType,
+        types.FunctionType,
+    ]
 
-    def unstructure_classmethod_staticmethod(obj: Any) -> str:
-        """Unstructure classmethod and staticmethod objects."""
-        qualname_parts = obj.__func__.__qualname__.split(".")
-        class_name = qualname_parts[-2] if len(qualname_parts) >= 2 else "UnknownClass"
-        return f"{obj.__class__.__name__}: '{obj.__func__.__name__}' of '{class_name}'"
-
-    def unstructure_descriptor(
-        obj: types.MemberDescriptorType
-        | types.MethodDescriptorType
-        | types.WrapperDescriptorType
-        | types.GetSetDescriptorType
-        | types.ClassMethodDescriptorType,
-    ) -> str:
-        """Unstructure various descriptor types."""
-        return f"descriptor: '{obj.__name__}' of '{obj.__objclass__.__name__}'"
-
-    def unstructure_builtin(
-        obj: types.BuiltinFunctionType | types.BuiltinMethodType,
-    ) -> str:
-        """Unstructure builtin functions and methods."""
-        return f"builtin: '{obj.__name__}'"
-
-    def unstructure_method(obj: types.MethodType) -> str:
-        """Unstructure bound methods."""
-        return f"method: '{obj.__name__}' of '{obj.__self__.__class__.__name__}'"
-
-    def unstructure_function(obj: types.FunctionType) -> str:
-        """Unstructure regular functions."""
-        return f"function: '{obj.__name__}', args: {str(obj.__code__.co_varnames)}"
-
-    # Register all unstructure hooks with the converter
-    converter.register_unstructure_hook(property, unstructure_property)
-    converter.register_unstructure_hook(
-        classmethod, unstructure_classmethod_staticmethod
-    )
-    converter.register_unstructure_hook(
-        staticmethod, unstructure_classmethod_staticmethod
-    )
-    converter.register_unstructure_hook(
-        types.MemberDescriptorType, unstructure_descriptor
-    )
-    converter.register_unstructure_hook(
-        types.MethodDescriptorType, unstructure_descriptor
-    )
-    converter.register_unstructure_hook(
-        types.WrapperDescriptorType, unstructure_descriptor
-    )
-    converter.register_unstructure_hook(
-        types.GetSetDescriptorType, unstructure_descriptor
-    )
-    converter.register_unstructure_hook(
-        types.ClassMethodDescriptorType, unstructure_descriptor
-    )
-    converter.register_unstructure_hook(types.BuiltinFunctionType, unstructure_builtin)
-    converter.register_unstructure_hook(types.BuiltinMethodType, unstructure_builtin)
-    converter.register_unstructure_hook(types.MethodType, unstructure_method)
-    converter.register_unstructure_hook(types.FunctionType, unstructure_function)
+    for type_to_handle in non_serializable_types:
+        converter.register_unstructure_hook(type_to_handle, _simple_unstructure_hook)
 
 
 # noinspection PyArgumentList
 ibutsu_converter = make_json_converter()
 # we need this due to broken structure - replace wit tagged union and/or consistent handling
 ibutsu_converter.register_structure_hook(str | bytes, lambda o, _: o)
-# Configure custom unstructure hooks for descriptor types that cannot be JSON serialized
-_configure_descriptor_unstructure_hooks(ibutsu_converter)
+# Configure simple unstructure hooks for non-serializable types
+_configure_simple_converter(ibutsu_converter)
 
 
 class ItemMarker(TypedDict):
@@ -130,22 +113,17 @@ def _safe_string(obj: object) -> str:
     return obj.encode("ascii", "xmlcharrefreplace").decode("ascii")
 
 
-def _metadata_unstructure_hook(value: dict[str, Any]) -> dict[str, Any]:
-    """Custom unstructure hook for metadata that ensures deep conversion of all nested objects."""
-    result = ibutsu_converter.unstructure(value)
-    # Ensure we return a dict[str, Any] as declared
-    if isinstance(result, dict):
-        return result
-    # Fallback to original value if unstructure doesn't return a dict
-    return value
-
-
-# Enhanced attrs serializer using cattrs converter
+# Simplified attrs serializer using cattrs converter
 def _serializer(inst: type, field: attrs.Attribute[Any], value: Any) -> Any:
-    """Enhanced serializer using cattrs preconf converter integration."""
+    """Simple serializer that uses cattrs for metadata fields and passes through others.
+
+    This leverages the cattrs preconf converter to handle complex nested structures
+    automatically without custom metadata-specific hooks.
+    """
     if field and field.name == "metadata":
-        # Use cattrs converter to unstructure the metadata deeply
-        return _metadata_unstructure_hook(value)
+        # Use cattrs converter to unstructure the metadata - it will handle
+        # nested non-serializable objects using our registered hooks
+        return ibutsu_converter.unstructure(value)
     else:
         return value
 
