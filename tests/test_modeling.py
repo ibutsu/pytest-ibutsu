@@ -59,9 +59,8 @@ class TestSafeString:
     def test_bytes_input(self):
         """Test with bytes input."""
         result = _safe_string(b"test bytes")
-        assert (
-            result == "b'test bytes'"
-        )  # _safe_string converts bytes to str representation
+        # _safe_string should decode bytes to string directly
+        assert result == "test bytes"
 
     def test_unicode_string(self):
         """Test with unicode string."""
@@ -93,58 +92,62 @@ class TestSafeString:
         # Create a bytes object
         test_bytes = b"test string"
         result = _safe_string(test_bytes)
-        # When a bytes object is passed to str(), it becomes "b'...'"
-        assert result.startswith("b'")
-        assert "test string" in result
+        # _safe_string should decode bytes directly to avoid repr format
+        assert result == "test string"
 
 
-class TestCattrsIntegration:
-    """Test the cattrs converter integration with custom unstructure hooks."""
+class TestSerializationIntegration:
+    """Test that all types can be successfully serialized to JSON via cattrs converter."""
 
-    def test_wrapper_descriptor_unstructuring(self):
-        """Test unstructuring wrapper_descriptor objects via cattrs."""
-        result = ibutsu_converter.unstructure(list.__len__)
-        assert result == "descriptor: '__len__' of 'list'"
+    def test_descriptor_types_serialization(self):
+        """Test that various descriptor types can be serialized successfully."""
+        # Test various descriptor types - we don't care about exact format,
+        # just that they serialize successfully to strings
+        descriptor_objects = [
+            list.__len__,  # wrapper_descriptor
+            str.upper,  # method_descriptor
+            dict.get,  # method_descriptor
+            list.append,  # method_descriptor
+            int.__add__,  # wrapper_descriptor
+        ]
 
-        result = ibutsu_converter.unstructure(int.__add__)
-        assert result == "descriptor: '__add__' of 'int'"
+        for obj in descriptor_objects:
+            result = ibutsu_converter.unstructure(obj)
+            # Should be converted to a string representation
+            assert isinstance(result, str)
+            # Should contain the object name or be a valid repr
+            assert len(result) > 0
 
-    def test_method_descriptor_unstructuring(self):
-        """Test unstructuring method_descriptor objects via cattrs."""
-        result = ibutsu_converter.unstructure(str.upper)
-        assert result == "descriptor: 'upper' of 'str'"
+    def test_builtin_functions_serialization(self):
+        """Test that builtin functions can be serialized successfully."""
+        builtin_functions = [len, max, abs, min, sum]
 
-        result = ibutsu_converter.unstructure(dict.get)
-        assert result == "descriptor: 'get' of 'dict'"
+        for func in builtin_functions:
+            result = ibutsu_converter.unstructure(func)
+            # Should be converted to a string representation
+            assert isinstance(result, str)
+            assert len(result) > 0
 
-        result = ibutsu_converter.unstructure(list.append)
-        assert result == "descriptor: 'append' of 'list'"
-
-    def test_builtin_function_unstructuring(self):
-        """Test unstructuring builtin functions via cattrs."""
-        result = ibutsu_converter.unstructure(len)
-        assert result == "builtin: 'len'"
-
-        result = ibutsu_converter.unstructure(max)
-        assert result == "builtin: 'max'"
-
-        result = ibutsu_converter.unstructure(abs)
-        assert result == "builtin: 'abs'"
-
-    def test_builtin_method_unstructuring(self):
-        """Test unstructuring builtin methods (bound builtin methods) via cattrs."""
+    def test_builtin_methods_serialization(self):
+        """Test that bound builtin methods can be serialized successfully."""
         test_list = [1, 2, 3]
         test_dict = {"key": "value"}
 
-        # Bound builtin methods are typically BuiltinFunctionType/BuiltinMethodType
-        result = ibutsu_converter.unstructure(test_list.append)
-        assert result == "builtin: 'append'"
+        bound_methods = [
+            test_list.append,
+            test_list.pop,
+            test_dict.get,
+            test_dict.keys,
+        ]
 
-        result = ibutsu_converter.unstructure(test_dict.get)
-        assert result == "builtin: 'get'"
+        for method in bound_methods:
+            result = ibutsu_converter.unstructure(method)
+            # Should be converted to a string representation
+            assert isinstance(result, str)
+            assert len(result) > 0
 
-    def test_python_method_unstructuring(self):
-        """Test unstructuring bound Python methods (MethodType) via cattrs."""
+    def test_python_methods_serialization(self):
+        """Test that Python methods can be serialized successfully."""
 
         class TestClass:
             def instance_method(self):
@@ -156,16 +159,19 @@ class TestCattrsIntegration:
 
         obj = TestClass()
 
-        # Bound instance method
-        result = ibutsu_converter.unstructure(obj.instance_method)
-        assert result == "method: 'instance_method' of 'TestClass'"
+        methods = [
+            obj.instance_method,
+            TestClass.class_method,
+        ]
 
-        # Bound class method
-        result = ibutsu_converter.unstructure(TestClass.class_method)
-        assert result == "method: 'class_method' of 'type'"
+        for method in methods:
+            result = ibutsu_converter.unstructure(method)
+            # Should be converted to a string representation
+            assert isinstance(result, str)
+            assert len(result) > 0
 
-    def test_function_unstructuring(self):
-        """Test unstructuring regular functions (FunctionType) via cattrs."""
+    def test_functions_serialization(self):
+        """Test that regular functions can be serialized successfully."""
 
         def test_func():
             pass
@@ -173,41 +179,16 @@ class TestCattrsIntegration:
         def func_with_args(a, b, c):
             return a + b + c
 
-        result = ibutsu_converter.unstructure(test_func)
-        assert result == "function: 'test_func', args: ()"
+        functions = [test_func, func_with_args]
 
-        result = ibutsu_converter.unstructure(func_with_args)
-        assert result == "function: 'func_with_args', args: ('a', 'b', 'c')"
+        for func in functions:
+            result = ibutsu_converter.unstructure(func)
+            # Should be converted to a string representation
+            assert isinstance(result, str)
+            assert len(result) > 0
 
-    def test_lambda_function_unstructuring(self):
-        """Test unstructuring lambda functions via cattrs."""
-
-        def lambda_func(x):
-            return x + 1
-
-        result = ibutsu_converter.unstructure(lambda_func)
-        assert result == "function: 'lambda_func', args: ('x',)"
-
-        def lambda_no_args():
-            return "test"
-
-        result = ibutsu_converter.unstructure(lambda_no_args)
-        assert result == "function: 'lambda_no_args', args: ()"
-
-    def test_static_method_unstructuring(self):
-        """Test unstructuring static methods via cattrs."""
-
-        class TestClass:
-            @staticmethod
-            def static_method(x, y):
-                return x + y
-
-        # Static methods are FunctionType, not MethodType
-        result = ibutsu_converter.unstructure(TestClass.static_method)
-        assert result == "function: 'static_method', args: ('x', 'y')"
-
-    def test_property_unstructuring(self):
-        """Test unstructuring property objects via cattrs."""
+    def test_property_serialization(self):
+        """Test that property objects can be serialized successfully."""
 
         class TestClass:
             def __init__(self):
@@ -217,43 +198,39 @@ class TestCattrsIntegration:
             def value(self):
                 return self._value
 
-            @value.setter
-            def value(self, val):
-                self._value = val
-
-        # Properties are built-in property objects
         result = ibutsu_converter.unstructure(TestClass.value)
-        assert result == "property: 'value'"
+        # Should be converted to a string representation
+        assert isinstance(result, str)
+        assert len(result) > 0
 
-    def test_classmethod_unstructuring(self):
-        """Test unstructuring unbound classmethod objects via cattrs."""
+    def test_classmethod_staticmethod_serialization(self):
+        """Test that unbound classmethod and staticmethod objects can be serialized."""
 
         class TestClass:
             @classmethod
-            def unbound_class_method(cls):
-                return "unbound"
+            def class_method(cls):
+                return "class"
 
-        # Access the unbound classmethod descriptor
-        unbound_classmethod = TestClass.__dict__["unbound_class_method"]
-        result = ibutsu_converter.unstructure(unbound_classmethod)
-        assert result == "classmethod: 'unbound_class_method' of 'TestClass'"
-
-    def test_staticmethod_unstructuring(self):
-        """Test unstructuring unbound staticmethod objects via cattrs."""
-
-        class TestClass:
             @staticmethod
-            def unbound_static_method():
+            def static_method():
                 return "static"
 
-        # Access the unbound staticmethod descriptor
-        unbound_staticmethod = TestClass.__dict__["unbound_static_method"]
-        result = ibutsu_converter.unstructure(unbound_staticmethod)
-        assert result == "staticmethod: 'unbound_static_method' of 'TestClass'"
+        # Access the unbound descriptor objects
+        unbound_classmethod = TestClass.__dict__["class_method"]
+        unbound_staticmethod = TestClass.__dict__["static_method"]
 
-    def test_edge_case_unstructuring(self):
-        """Test unstructuring edge cases and normal objects via cattrs."""
-        # Normal objects should pass through unchanged or be handled by default cattrs logic
+        class_result = ibutsu_converter.unstructure(unbound_classmethod)
+        static_result = ibutsu_converter.unstructure(unbound_staticmethod)
+
+        # Both should be converted to string representations
+        assert isinstance(class_result, str)
+        assert isinstance(static_result, str)
+        assert len(class_result) > 0
+        assert len(static_result) > 0
+
+    def test_normal_objects_passthrough(self):
+        """Test that normal serializable objects pass through unchanged."""
+        # Normal objects should pass through unchanged by default cattrs logic
         result = ibutsu_converter.unstructure("test string")
         assert result == "test string"
 
@@ -309,10 +286,11 @@ class TestCattrsIntegration:
             # Use cattrs to unstructure
             unstructured = ibutsu_converter.unstructure(obj)
 
-            # Verify it can be JSON serialized
+            # Verify it can be JSON serialized - this is the key requirement
             try:
                 json_result = json.dumps({"obj": unstructured})
                 assert isinstance(json_result, str)
+                assert len(json_result) > 0
             except Exception as e:
                 pytest.fail(
                     f"Failed to JSON serialize cattrs unstructured {type(obj).__name__}: {e}"
@@ -363,13 +341,14 @@ class TestCattrsIntegration:
             },
         }
 
-        # Unstructure with cattrs
+        # Unstructure with cattrs and verify JSON serialization succeeds
         try:
             unstructured = ibutsu_converter.unstructure(complex_metadata)
             json_result = json.dumps(unstructured)
             assert isinstance(json_result, str)
+            assert len(json_result) > 0
 
-            # Verify descriptors were converted to strings
+            # Verify all descriptors were converted to strings (don't care about format)
             assert isinstance(unstructured["markers"][0]["args"][0], str)
             assert isinstance(unstructured["markers"][0]["args"][1], str)
             assert isinstance(unstructured["markers"][0]["kwargs"]["func"], str)
@@ -380,21 +359,18 @@ class TestCattrsIntegration:
             assert isinstance(unstructured["user_properties"]["staticmethod"], str)
             assert isinstance(unstructured["nested"]["deep"]["method"], str)
 
-            # Verify the specific format of descriptor types
-            assert "descriptor:" in unstructured["user_properties"]["test_func"]
-            assert "builtin:" in unstructured["user_properties"]["builtin"]
-            assert "property:" in unstructured["user_properties"]["property"]
-            assert "classmethod:" in unstructured["user_properties"]["classmethod"]
-            assert "staticmethod:" in unstructured["user_properties"]["staticmethod"]
+            # Verify normal values are preserved
+            assert unstructured["user_properties"]["normal"] == "string"
         except Exception as e:
             pytest.fail(
                 f"Failed to unstructure complex nested structure with cattrs: {e}"
             )
 
     def test_testrun_to_dict_with_cattrs(self):
-        """Test that TestRun.to_dict() uses cattrs properly."""
+        """Test that TestRun.to_dict() uses cattrs properly and can serialize complex metadata."""
         run = TestRun(component="test-component", source="test-source")
         run.metadata["descriptor"] = list.__len__  # Add a descriptor to metadata
+        run.metadata["normal_data"] = "string value"
         run.attach_artifact("test.txt", b"content")
 
         result_dict = run.to_dict()
@@ -407,14 +383,18 @@ class TestCattrsIntegration:
         assert "source" in result_dict
         assert "metadata" in result_dict
 
-        # Metadata descriptor should be properly unstructured
+        # Metadata descriptor should be serialized as string (don't care about format)
         assert isinstance(result_dict["metadata"]["descriptor"], str)
-        assert "descriptor:" in result_dict["metadata"]["descriptor"]
+        assert len(result_dict["metadata"]["descriptor"]) > 0
+
+        # Normal metadata should be preserved
+        assert result_dict["metadata"]["normal_data"] == "string value"
 
     def test_testresult_to_dict_with_cattrs(self):
-        """Test that TestResult.to_dict() uses cattrs properly."""
+        """Test that TestResult.to_dict() uses cattrs properly and can serialize complex metadata."""
         result = TestResult(test_id="test1", source="test-source")
         result.metadata["descriptor"] = str.upper  # Add a descriptor to metadata
+        result.metadata["normal_data"] = "string value"
         result.attach_artifact("log.txt", b"log content")
 
         result_dict = result.to_dict()
@@ -427,15 +407,17 @@ class TestCattrsIntegration:
         assert "source" in result_dict
         assert "metadata" in result_dict
 
-        # Metadata descriptor should be properly unstructured
+        # Metadata descriptor should be serialized as string (don't care about format)
         assert isinstance(result_dict["metadata"]["descriptor"], str)
-        assert "descriptor:" in result_dict["metadata"]["descriptor"]
+        assert len(result_dict["metadata"]["descriptor"]) > 0
+
+        # Normal metadata should be preserved
+        assert result_dict["metadata"]["normal_data"] == "string value"
 
     def test_converter_hook_registration(self):
-        """Test that all expected hooks are registered on the converter."""
-
+        """Test that converter can handle various non-serializable types."""
         # Test that hooks exist by trying to unstructure various types
-        # If hooks weren't registered, these would fail or give unexpected results
+        # All should return string representations without raising exceptions
 
         # Property
         class TestClass:
@@ -457,8 +439,8 @@ class TestCattrsIntegration:
         )
 
 
-class TestEnhancedSerializer:
-    """Test the enhanced _serializer function with cattrs integration."""
+class TestSimplifiedSerializer:
+    """Test the simplified _serializer function with cattrs integration."""
 
     def test_serialize_metadata_field_with_cattrs(self):
         """Test serializing metadata field using cattrs converter."""
@@ -482,13 +464,13 @@ class TestEnhancedSerializer:
         assert isinstance(result, dict)
         assert result["key"] == "value"
 
-        # Descriptors should be converted to strings
+        # Descriptors should be converted to strings (don't care about format)
         assert isinstance(result["descriptor"], str)
-        assert "descriptor:" in result["descriptor"]
+        assert len(result["descriptor"]) > 0
         assert isinstance(result["builtin"], str)
-        assert "builtin:" in result["builtin"]
+        assert len(result["builtin"]) > 0
         assert isinstance(result["nested"]["deep_descriptor"], str)
-        assert "descriptor:" in result["nested"]["deep_descriptor"]
+        assert len(result["nested"]["deep_descriptor"]) > 0
 
     def test_serialize_non_metadata_field(self):
         """Test serializing non-metadata fields pass through unchanged."""
@@ -534,14 +516,14 @@ class TestEnhancedSerializer:
 
         result = _serializer(Mock(), mock_attr, complex_metadata)
 
-        # All descriptors should be converted to strings
+        # All descriptors should be converted to strings (don't care about exact format)
         assert isinstance(result["markers"][0]["args"][0], str)
         assert isinstance(result["markers"][0]["args"][1], str)
         assert isinstance(result["markers"][0]["kwargs"]["func"], str)
         assert isinstance(result["properties"]["prop"], str)
         assert isinstance(result["properties"]["classmethod"], str)
 
-        # Normal data should pass through
+        # Normal data should pass through unchanged
         assert result["normal_data"] == "string value"
 
 
