@@ -21,42 +21,32 @@ if TYPE_CHECKING:
     from .pytest_plugin import IbutsuPlugin
 
 
-class S3UploadError(Exception):
-    pass
-
-
 class S3Uploader:
     """Handles uploading artifacts to Amazon S3 bucket."""
 
     def __init__(self, bucket_name: str | None = None, timeout: int = 180) -> None:
         if boto3 is None:
-            raise S3UploadError(
+            raise Exception(
                 "boto3 is required for S3 upload functionality. "
                 "Install it with: pip install pytest-ibutsu[s3]"
             )
 
         self.bucket_name = bucket_name or os.getenv("AWS_BUCKET")
         if not self.bucket_name:
-            raise S3UploadError(
+            raise ValueError(
                 "AWS bucket name is required. Set AWS_BUCKET environment variable "
                 "or pass bucket_name parameter."
             )
 
         self.timeout = timeout
-        self.s3_client: Any = None
-        self._init_s3_client()
 
-    def _init_s3_client(self) -> None:
-        """Initialize S3 client with AWS credentials from environment."""
-        try:
-            # boto3 will automatically use AWS credentials from:
-            # - Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION)
-            # - AWS credentials file
-            # - EC2 instance profile
-            # - AWS IAM role
-            self.s3_client = boto3.client("s3")
-        except Exception as e:
-            raise S3UploadError(f"Failed to initialize S3 client: {e}") from e
+        # boto3 will automatically use AWS credentials from:
+        # - Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION)
+        # - AWS credentials file
+        # - EC2 instance profile
+        # - AWS IAM role
+        self.s3_client: Any = boto3.client("s3")
+        assert self.s3_client is not None
 
     def find_uuid_tar_gz_files(self, directory: str = ".") -> list[Path]:
         """Find files in the first level of the directory.
@@ -100,17 +90,12 @@ class S3Uploader:
 
             return bool(s3_file_size == local_file_size)
 
-        except ClientError as e:
+        except Exception as e:
             # If the file doesn't exist, head_object raises a 404 ClientError
-            if e.response["Error"]["Code"] == "404":
+            if isinstance(e, ClientError) and e.response["Error"]["Code"] == "404":
                 return False
             # For other errors, log and return False to be safe
             logger.warning(f"Error checking S3 file existence for {key}: {e}")
-            return False
-        except Exception as e:
-            logger.warning(
-                f"Unexpected error checking S3 file existence for {key}: {e}"
-            )
             return False
 
     def upload_file(self, file_path: Path, key: str | None = None) -> str | None:
@@ -123,11 +108,9 @@ class S3Uploader:
         Returns:
             S3 URL of uploaded file
 
-        Raises:
-            S3UploadError: If upload fails
         """
         if not file_path.exists():
-            raise S3UploadError(f"File {file_path} does not exist")
+            raise FileNotFoundError(f"{file_path.resolve()}")
 
         s3_key = key or str(file_path)
 
@@ -137,38 +120,25 @@ class S3Uploader:
 
         # Check if file already exists in S3 with same name and size
         if self._file_exists_in_s3(s3_key, local_file_size):
-            logger.debug(
+            logger.warning(
                 f"Pytest-Ibutsu: Skipping {file_path}, exists in S3 with same size: {s3_url}"
             )
             return None
 
-        try:
-            logger.debug(f"Pytest-Ibutsu: Uploading {file_path} to {self.bucket_name}")
+        logger.info(f"Uploading {file_path} to {self.bucket_name}")
 
-            if self.s3_client is None:
-                raise S3UploadError("S3 client not initialized")
+        with open(file_path, "rb") as file_obj:
+            self.s3_client.upload_fileobj(
+                file_obj,
+                self.bucket_name,
+                s3_key,
+                ExtraArgs={"ServerSideEncryption": "AES256"},
+            )
 
-            with open(file_path, "rb") as file_obj:
-                self.s3_client.upload_fileobj(
-                    file_obj,
-                    self.bucket_name,
-                    s3_key,
-                    ExtraArgs={"ServerSideEncryption": "AES256"},
-                )
+        # Construct S3 URL
+        logger.info(f"Pytest-Ibutsu: Upload complete: {s3_url}")
 
-            # Construct S3 URL
-            logger.debug(f"Pytest-Ibutsu: Upload complete: {s3_url}")
-
-            return s3_url
-
-        except (BotoCoreError, ClientError) as e:
-            error_msg = f"Failed to upload {file_path} to S3: {e}"
-            logger.exception(f"Error: {error_msg}")
-            raise S3UploadError(error_msg) from e
-        except Exception as e:
-            error_msg = f"Unexpected error uploading {file_path}: {e}"
-            logger.exception(f"Error: {error_msg}")
-            raise S3UploadError(error_msg) from e
+        return s3_url
 
     def upload_archives(self, directory: str = ".") -> list[str]:
         """Upload artifacts from directory to S3.
@@ -193,8 +163,9 @@ class S3Uploader:
                 s3_url = self.upload_file(file_path)
                 if s3_url is not None:
                     uploaded_urls.append(s3_url)
-            except S3UploadError:
+            except Exception:
                 # Continue uploading other files even if one fails
+                logger.exception(f"Failed to upload {file_path}, continuing...")
                 continue
 
         logger.info(
@@ -216,7 +187,5 @@ def upload_to_s3(
     try:
         uploader = S3Uploader()
         uploader.upload_archives(directory)
-    except S3UploadError as e:
-        logger.exception(f"S3 upload failed: {e}")
-    except Exception as e:
-        logger.exception(f"Unexpected error during S3 upload: {e}")
+    except Exception:
+        logger.exception("Error processing archives for upload:")

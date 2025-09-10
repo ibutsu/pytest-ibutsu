@@ -18,8 +18,7 @@ from typing import Iterator
 import pytest
 
 from .archiver import dump_to_archive
-from .modeling import TestResult
-from .modeling import TestRun
+from .modeling import TestResult, TestRun
 from .sender import send_data_to_ibutsu
 from .s3_uploader import upload_to_s3
 
@@ -274,13 +273,13 @@ class IbutsuPlugin:
         if not Path(f"{self.run.id}.tar.gz").exists():
             return
         with tarfile.open(f"{self.run.id}.tar.gz", "r:gz") as archive:
-            run_json = json.load(archive.extractfile(f"{self.run.id}/run.json"))  # type: ignore
+            run_json = json.loads(archive.extractfile(f"{self.run.id}/run.json").read())  # type: ignore
             prior_run = TestRun.from_json(run_json)
             for name, run_artifact in self._find_run_artifacts(archive):
                 prior_run.attach_artifact(name, run_artifact)
             for name in archive.getnames():
                 if name.endswith("/result.json"):
-                    result_json = json.load(archive.extractfile(name))  # type: ignore
+                    result_json = json.loads(archive.extractfile(name).read())  # type: ignore
                     prior_result = TestResult.from_json(result_json)
                     prior_run._results.append(prior_result)
                     # do not overwrite existing results, keep only the latest
