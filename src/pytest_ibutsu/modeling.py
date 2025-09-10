@@ -44,7 +44,7 @@ def _configure_descriptor_unstructure_hooks(converter: Any) -> None:
         """Unstructure property objects."""
         return f"{obj.__class__.__name__}: '{obj.fget.__name__ if obj.fget is not None else '_prop_fget_empty'}'"
 
-    def unstructure_classmethod_staticmethod(obj: classmethod | staticmethod) -> str:
+    def unstructure_classmethod_staticmethod(obj: Any) -> str:
         """Unstructure classmethod and staticmethod objects."""
         qualname_parts = obj.__func__.__qualname__.split(".")
         class_name = qualname_parts[-2] if len(qualname_parts) >= 2 else "UnknownClass"
@@ -123,16 +123,21 @@ def _safe_string(obj: object) -> str:
     This function tries to make str/unicode out of ``obj`` unless it already is one of those and
     then it processes it so in the end there is a harmless ascii string.
     """
-    if not isinstance(obj, str):
-        obj = str(obj)
     if isinstance(obj, bytes):
         obj = obj.decode("utf-8", "ignore")
+    elif not isinstance(obj, str):
+        obj = str(obj)
     return obj.encode("ascii", "xmlcharrefreplace").decode("ascii")
 
 
 def _metadata_unstructure_hook(value: dict[str, Any]) -> dict[str, Any]:
     """Custom unstructure hook for metadata that ensures deep conversion of all nested objects."""
-    return ibutsu_converter.unstructure(value)
+    result = ibutsu_converter.unstructure(value)
+    # Ensure we return a dict[str, Any] as declared
+    if isinstance(result, dict):
+        return result
+    # Fallback to original value if unstructure doesn't return a dict
+    return value
 
 
 # Enhanced attrs serializer using cattrs converter

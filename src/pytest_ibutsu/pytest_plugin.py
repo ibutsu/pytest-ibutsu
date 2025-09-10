@@ -24,7 +24,7 @@ from .sender import send_data_to_ibutsu
 from .s3_uploader import upload_to_s3
 
 if TYPE_CHECKING:
-    import xdist.workermanage  # type: ignore[import-untyped]
+    import xdist.workermanage
 
 UUID_REGEX = re.compile(
     r"[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}"
@@ -73,7 +73,7 @@ class IbutsuPlugin:
         ibutsu_source: str,
         ibutsu_project: str,
         ibutsu_no_archive: bool,
-        extra_data: dict,
+        extra_data: dict[str, Any],
         run: TestRun,
     ) -> None:
         self.ibutsu_mode = ibutsu_mode
