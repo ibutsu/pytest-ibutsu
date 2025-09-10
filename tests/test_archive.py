@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Iterator, Any
 from unittest.mock import patch
 
-from pytest_subtests import SubTests
 from pytest_ibutsu.archiver import IbutsuArchiver, dump_to_archive
 from pytest_ibutsu.modeling import TestResult, TestRun
 
@@ -20,6 +19,25 @@ from . import expected_results
 ARCHIVE_REGEX = re.compile(
     r"^([0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12})\.tar\.gz$"
 )
+
+# Constants for artifact types
+COLLECTED_ARTIFACTS = {"runtest_teardown", "runtest"}
+FAILED_ARTIFACTS = {"legacy_exception", "actual_exception"}
+ALL_ARTIFACT_TYPES = [
+    "legacy_exception",
+    "actual_exception",
+    "runtest_teardown",
+    "runtest",
+]
+
+# Archive and test constants
+ARCHIVE_MODE = "archive"
+TEST_PROJECT = "test_project"
+IBUTSU_ARCHIVE_ARG = "--ibutsu=archive"
+PROJECT_ARG = "--ibutsu-project=test_project"
+SOME_MARKER = "some_marker"
+EXAMPLE_TEST_FILE = "example_test_to_report_to_ibutsu.py"
+SERIALIZATION_FAILED_ERROR = "serialization_failed"
 
 CURRENT_DIR = Path(__file__).parent
 
@@ -42,7 +60,7 @@ def run_id() -> str:
 
 
 def run_pytest(pytester: pytest.Pytester, args: list[str]) -> pytest.RunResult:
-    pytester.copy_example(str(CURRENT_DIR / "example_test_to_report_to_ibutsu.py"))
+    pytester.copy_example(str(CURRENT_DIR / EXAMPLE_TEST_FILE))
     pytester.makeconftest((CURRENT_DIR / "example_conftest.py").read_text())
     return pytester.runpytest(*args)
 
@@ -50,19 +68,19 @@ def run_pytest(pytester: pytest.Pytester, args: list[str]) -> pytest.RunResult:
 Param = namedtuple("Param", ["run_twice", "pytest_args"])
 
 NO_XDIST_ARGS = [
-    "--ibutsu=archive",
-    "--ibutsu-project=test_project",
-    "example_test_to_report_to_ibutsu.py",
+    IBUTSU_ARCHIVE_ARG,
+    PROJECT_ARG,
+    EXAMPLE_TEST_FILE,
 ]
 
 XDIST_ARGS = [
-    "--ibutsu=archive",
-    "--ibutsu-project=test_project",
+    IBUTSU_ARCHIVE_ARG,
+    PROJECT_ARG,
     "-p",
     "xdist",
     "-n",
     "2",
-    "example_test_to_report_to_ibutsu.py",
+    EXAMPLE_TEST_FILE,
 ]
 
 PYTEST_XDIST_ARGS = [
@@ -83,11 +101,11 @@ def test_data(
         run_pytest(pytester, args + [f"--ibutsu-run-id={run_id}"])
         return (
             run_pytest(
-                pytester, args + ["-m", "some_marker", f"--ibutsu-run-id={run_id}"]
+                pytester, args + ["-m", SOME_MARKER, f"--ibutsu-run-id={run_id}"]
             ),
             run_id,
         )
-    result = run_pytest(pytester, args + ["-m", "some_marker"])
+    result = run_pytest(pytester, args + ["-m", SOME_MARKER])
     for path in pytester.path.glob("*.tar.gz"):
         if match := re.match(ARCHIVE_REGEX, path.name):
             return result, match.group(1)
@@ -97,28 +115,20 @@ def test_data(
 def test_archive_creation_comprehensive(
     pytester: pytest.Pytester,
     test_data: tuple[pytest.RunResult, str],
-    subtests: SubTests,
 ):
-    """Comprehensive test for archive creation, validation and properties."""
+    """Test that no internal errors occurred during pytest execution."""
     result, run_id = test_data
+    result.stdout.no_re_match_line("INTERNALERROR")
 
-    with subtests.test("no_internal_errors"):
-        # Test that no internal errors occurred during pytest execution
-        result.stdout.no_re_match_line("INTERNALERROR")
+    archive_name = f"{run_id}.tar.gz"
+    archive = pytester.path.joinpath(archive_name)
+    assert archive.is_file()
+    assert archive.lstat().st_size > 0
 
-    with subtests.test("file_creation_and_properties"):
-        # Test archive file was created with correct properties
-        archive_name = f"{run_id}.tar.gz"
-        archive = pytester.path.joinpath(archive_name)
-        assert archive.is_file()
-        assert archive.lstat().st_size > 0
-
-    with subtests.test("archive_count_validation"):
-        # Test exactly one archive was created
-        archives = 0
-        for path in pytester.path.glob("*"):
-            archives += 1 if re.match(ARCHIVE_REGEX, path.name) else 0
-        assert archives == 1, f"Expected exactly one archive file, got {archives}"
+    archives = 0
+    for path in pytester.path.glob("*"):
+        archives += 1 if re.match(ARCHIVE_REGEX, path.name) else 0
+    assert archives == 1, f"Expected exactly one archive file, got {archives}"
 
 
 @pytest.fixture
@@ -157,88 +167,119 @@ def test_archive_content_run(
     assert loaded == expected_results.RUNS["run_twice" if run_twice else "run_once"]
 
 
-def test_archive_content_results(
+def test_archive_content_results_count(
     request: pytest.FixtureRequest,
     archive: tarfile.TarFile,
-    subtests: SubTests,
     test_data: tuple[pytest.RunResult, str],
 ):
-    _, run_id = test_data
+    """Test that the correct number of result files exist in the archive."""
     run_twice = request.node.callspec.params["test_data"].run_twice
     members = [
         m for m in archive.getmembers() if m.isfile() and "result.json" in m.name
     ]
     assert len(members) == 7 if run_twice else 3
+
+
+def test_archive_content_results_validation(
+    request: pytest.FixtureRequest,
+    archive: tarfile.TarFile,
+    test_data: tuple[pytest.RunResult, str],
+):
+    """Test that all result files in archive have correct content and structure."""
+    _, run_id = test_data
+    members = [
+        m for m in archive.getmembers() if m.isfile() and "result.json" in m.name
+    ]
+
+    # Test each result individually, but in a single test function for better performance
     for member in members:
         o = archive.extractfile(member)
-        result = json.load(o)  # type: ignore
-        with subtests.test(name=result["test_id"]):
-            assert "id" in result
-            assert result["id"]
-            assert "start_time" in result
-            assert result["start_time"]
-            assert "duration" in result
-            assert result["duration"]
-            assert "run_id" in result
-            assert result["run_id"] == run_id
-            assert result["metadata"]["run"] == run_id
-            result = remove_varying_fields_from_result(result)
-            expected_result = expected_results.RESULTS[result["test_id"]]
-            assert result == expected_result
+        result_json = json.load(o)  # type: ignore
+        result = result_json.copy()  # Make a copy to avoid modifying original
+
+        # Basic structure validation
+        assert "id" in result, f"Result {member.name} missing 'id' field"
+        assert result["id"], f"Result {member.name} has empty 'id' field"
+        assert "start_time" in result, (
+            f"Result {member.name} missing 'start_time' field"
+        )
+        assert result["start_time"], (
+            f"Result {member.name} has empty 'start_time' field"
+        )
+        assert "duration" in result, f"Result {member.name} missing 'duration' field"
+        assert result["duration"], f"Result {member.name} has empty 'duration' field"
+        assert "run_id" in result, f"Result {member.name} missing 'run_id' field"
+        assert result["run_id"] == run_id, f"Result {member.name} has incorrect run_id"
+        assert result["metadata"]["run"] == run_id, (
+            f"Result {member.name} metadata has incorrect run_id"
+        )
+
+        # Content validation against expected results
+        result = remove_varying_fields_from_result(result)
+        expected_result = expected_results.RESULTS[result["test_id"]]
+        assert result == expected_result, f"Result {member.name} content mismatch"
 
 
-@pytest.mark.parametrize(
-    "artifact_name",
-    ["legacy_exception", "actual_exception", "runtest_teardown", "runtest"],
-)
-def test_archive_artifacts(
+@pytest.mark.parametrize("artifact_name", ALL_ARTIFACT_TYPES)
+def test_archive_artifacts_comprehensive(
     archive: tarfile.TarFile,
-    subtests: SubTests,
     artifact_name: str,
     test_data: tuple[pytest.RunResult, str],
 ):
+    """Test artifact files count, run artifact, and content comprehensively."""
     _, run_id = test_data
     run_json_tar_info = archive.extractfile(archive.getmembers()[1])
     run_json = json.load(run_json_tar_info)  # type: ignore
+
+    # Find all artifact files for this artifact type
     members = [
         m
         for m in archive.getmembers()
         if m.isfile() and f"{artifact_name}.log" in m.name
     ]
-    collected_or_failed = (
-        "collected" if artifact_name in ["runtest_teardown", "runtest"] else "failed"
+
+    # Determine expected summary key based on artifact type using sets
+    is_collected_artifact = artifact_name in COLLECTED_ARTIFACTS
+    summary_key = "collected" if is_collected_artifact else "failures"
+    artifact_description = "collected" if is_collected_artifact else "failed"
+
+    # Test 1: Correct number of artifact files exist
+    assert len(members) == run_json["summary"][summary_key], (
+        f"There should be {artifact_name}.log for each {artifact_description} test"
     )
-    collected_or_failures = (
-        "collected" if artifact_name in ["runtest_teardown", "runtest"] else "failures"
-    )
-    assert len(members) == run_json["summary"][collected_or_failures], (
-        f"There should be {artifact_name}.log for each {collected_or_failed} test"
-    )
+
+    # Test 2: Run artifact exists and has correct content
     run_artifact = archive.extractfile(f"{run_id}/some_artifact.log")
     assert run_artifact.read() == bytes("some_artifact", "utf8")  # type: ignore
+
+    # Test 3: Each artifact file has correct content
     for member in members:
         test_uuid = Path(member.name).parent.stem
-        with subtests.test(name=member.name):
-            log = archive.extractfile(member)
-            assert log.read() == bytes(f"{artifact_name}_{test_uuid}", "utf8")  # type: ignore
+        log = archive.extractfile(member)
+        expected_content = bytes(f"{artifact_name}_{test_uuid}", "utf8")
+        actual_content = log.read()
+        assert actual_content == expected_content, (
+            f"Content mismatch for {member.name}: "
+            f"expected {expected_content!r}, got {actual_content!r}"
+        )
 
 
 PYTEST_COLLECT_ARGS = [
     pytest.param(
         [
-            "--ibutsu=archive",
-            "--ibutsu-project=test_project",
+            IBUTSU_ARCHIVE_ARG,
+            PROJECT_ARG,
             "--collect-only",
-            "example_test_to_report_to_ibutsu.py",
+            EXAMPLE_TEST_FILE,
         ],
         id="no-xdist-collect-only",
     ),
     pytest.param(
         [
-            "--ibutsu=archive",
-            "--ibutsu-project=test_project",
+            IBUTSU_ARCHIVE_ARG,
+            PROJECT_ARG,
             "--collect-only",
-            "example_test_to_report_to_ibutsu.py",
+            EXAMPLE_TEST_FILE,
             "-n",
             "2",
         ],
@@ -246,8 +287,8 @@ PYTEST_COLLECT_ARGS = [
     ),
     pytest.param(
         [
-            "--ibutsu=archive",
-            "--ibutsu-project=test_project",
+            IBUTSU_ARCHIVE_ARG,
+            PROJECT_ARG,
             "-k",
             "test_that_doesnt_exist",
         ],
@@ -255,8 +296,8 @@ PYTEST_COLLECT_ARGS = [
     ),
     pytest.param(
         [
-            "--ibutsu=archive",
-            "--ibutsu-project=test_project",
+            IBUTSU_ARCHIVE_ARG,
+            PROJECT_ARG,
             "-k",
             "test_that_doesnt_exist",
             "-n",
@@ -282,26 +323,44 @@ def test_collect(pytester: pytest.Pytester, pytest_collect_test: pytest.RunResul
     assert archives == 0, f"No archives should be created, got {archives}"
 
 
+@pytest.fixture(
+    params=[
+        pytest.param(
+            (
+                "add_result",
+                TestResult,
+                (TestRun(id="test-run"), TestResult(test_id="test1")),
+            ),
+            id="add_result",
+        ),
+        pytest.param(("add_run", TestRun, (TestRun(id="test-run"),)), id="add_run"),
+    ]
+)
+def archiver_test_data(request):
+    """Fixture providing method, primary type, and factory for creating test data objects."""
+    method, primary_type, objects = request.param
+
+    # Find the primary data object and construct args accordingly
+    primary_obj = next(
+        (obj for obj in objects if isinstance(obj, primary_type)), objects[0]
+    )
+    run_obj = next((obj for obj in objects if isinstance(obj, TestRun)), None)
+
+    # For TestResult: args=(run, result), data_obj=result
+    # For TestRun: args=(run,), data_obj=run
+    args = (run_obj, primary_obj) if primary_type == TestResult else (primary_obj,)
+    archive_args = (args, primary_obj)
+
+    return method, primary_type, archive_args
+
+
 class TestIbutsuArchiverExtended:
     """Consolidated tests for IbutsuArchiver to reduce duplicate coverage."""
 
-    @pytest.mark.parametrize(
-        "method,data_type",
-        [
-            ("add_result", "result"),
-            ("add_run", "run"),
-        ],
-    )
-    def test_serialization_fallback_error(self, archive_name, method, data_type):
+    def test_serialization_fallback_error(self, archive_name, archiver_test_data):
         """Test serialization fallback when initial serialization fails."""
-        # Create appropriate data object
-        if data_type == "result":
-            run = TestRun(id="test-run")
-            data_obj = TestResult(test_id="test1")
-            args = (run, data_obj)
-        else:  # run
-            data_obj = TestRun(id="test-run")
-            args = (data_obj,)
+        method, _, archive_args = archiver_test_data
+        args = archive_args[0]
 
         archiver = IbutsuArchiver(archive_name)
 
@@ -318,18 +377,12 @@ class TestIbutsuArchiverExtended:
                 # Verify fallback was used
                 assert mock_unstructure.called
 
-    @pytest.mark.parametrize(
-        "method,data_type",
-        [
-            ("add_result", "result"),
-            ("add_run", "run"),
-        ],
-    )
-    def test_complete_serialization_failure(self, archive_name, method, data_type):
+    def test_complete_serialization_failure(self, archive_name, archiver_test_data):
         """Test complete serialization failure for both cattrs and to_dict."""
+        method, primary_type, _ = archiver_test_data
 
         # Create failing classes that cause to_dict to fail
-        if data_type == "result":
+        if primary_type == TestResult:
 
             class FailingTestResult(TestResult):
                 def to_dict(self):
@@ -339,7 +392,7 @@ class TestIbutsuArchiverExtended:
             data_obj = FailingTestResult(test_id="test1")
             args = (run, data_obj)
             expected_error_field = "result_id"
-        else:  # run
+        else:  # TestRun
 
             class FailingTestRun(TestRun):
                 def to_dict(self):
@@ -366,27 +419,13 @@ class TestIbutsuArchiverExtended:
             json_file = next(m for m in members if ".json" in m.name)
             content = tar.extractfile(json_file).read()
             error_data = json.loads(content)
-            assert error_data["error"] == "serialization_failed"
+            assert error_data["error"] == SERIALIZATION_FAILED_ERROR
             assert error_data[expected_error_field] == data_obj.id
 
-    @pytest.mark.parametrize(
-        "method,data_type",
-        [
-            ("add_result", "result"),
-            ("add_run", "run"),
-        ],
-    )
-    def test_artifact_file_not_found(self, tmp_path, method, data_type):
+    def test_artifact_file_not_found(self, tmp_path, archiver_test_data):
         """Test artifact handling when file is not found."""
-
-        # Create appropriate data object and attach missing artifact
-        if data_type == "result":
-            run = TestRun(id="test-run")
-            data_obj = TestResult(test_id="test1")
-            args = (run, data_obj)
-        else:  # run
-            data_obj = TestRun(id="test-run")
-            args = (data_obj,)
+        method, _, archive_args = archiver_test_data
+        args, data_obj = archive_args
 
         # Add an artifact that references a non-existent file
         data_obj.attach_artifact("missing_file.log", "/nonexistent/file.log")
@@ -403,24 +442,10 @@ class TestIbutsuArchiverExtended:
             artifact_files = [m for m in members if "missing_file.log" in m.name]
             assert len(artifact_files) == 0
 
-    @pytest.mark.parametrize(
-        "method,data_type",
-        [
-            ("add_result", "result"),
-            ("add_run", "run"),
-        ],
-    )
-    def test_artifact_is_directory(self, tmp_path, method, data_type):
+    def test_artifact_is_directory(self, tmp_path, archiver_test_data):
         """Test artifact handling when artifact points to a directory."""
-
-        # Create appropriate data object
-        if data_type == "result":
-            run = TestRun(id="test-run")
-            data_obj = TestResult(test_id="test1")
-            args = (run, data_obj)
-        else:  # run
-            data_obj = TestRun(id="test-run")
-            args = (data_obj,)
+        method, _, archive_args = archiver_test_data
+        args, data_obj = archive_args
 
         # Add an artifact that references a directory
         artifact_dir = tmp_path / "artifact_directory"

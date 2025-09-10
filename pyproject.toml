@@ -38,7 +38,6 @@ s3 = [
 
 [dependency-groups]
 test = [
-  "pytest-subtests",
   "pytest-xdist",
   "python-jose",
   "pytest-cov",
@@ -121,7 +120,6 @@ addopts = [
     "--cov-report=html",
     "--cov-branch",
     "--cov-fail-under=74",
-    "-v"
 ]
 
 [tool.coverage.run]

@@ -1,5 +1,4 @@
 import pytest
-import pytest_subtests
 
 from pytest_ibutsu.modeling import Summary
 from pytest_ibutsu.modeling import TestResult as TResult
@@ -36,15 +35,16 @@ def test_run_env_vars(monkeypatch: pytest.MonkeyPatch):
     assert run.metadata["env_id"] == "some_env_id"
 
 
-def test_run_to_dict(subtests: pytest_subtests.SubTests):
+def test_run_to_dict():
     run = TRun()
     assert hasattr(run, "_start_unix_time")
     dict_run = run.to_dict()
-    for key in dict_run:
-        with subtests.test(msg="private field", key=key):
-            assert not key.startswith("_"), (
-                "dictionary must not contain private attributes"
-            )
+
+    # Test that no keys start with underscore (private attributes)
+    private_keys = [key for key in dict_run if key.startswith("_")]
+    assert not private_keys, (
+        f"Dictionary must not contain private attributes, but found: {private_keys}"
+    )
 
 
 def test_run_id_in_xdist_results():

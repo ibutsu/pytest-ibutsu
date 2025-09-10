@@ -98,7 +98,7 @@ class S3Uploader:
             response = self.s3_client.head_object(Bucket=self.bucket_name, Key=key)
             s3_file_size = response.get("ContentLength", 0)
 
-            return s3_file_size == local_file_size
+            return bool(s3_file_size == local_file_size)
 
         except ClientError as e:
             # If the file doesn't exist, head_object raises a 404 ClientError

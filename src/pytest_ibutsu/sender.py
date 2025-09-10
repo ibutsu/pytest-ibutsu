@@ -62,16 +62,16 @@ class IbutsuSender:
         self._has_server_error = False
         self._server_error_tbs: list[str] = []
         self._sender_cache = []  # type: ignore
-        config = Configuration(access_token=token, host=server_url)
+        config = Configuration(access_token=token, host=server_url)  # type: ignore[no-untyped-call]
         # Only set the SSL CA cert if one of the environment variables is set
         for env_var in CA_BUNDLE_ENVS:
             if os.getenv(env_var, None):
                 config.ssl_ca_cert = os.getenv(env_var)
-        api_client = ApiClient(config)
-        self.result_api = ResultApi(api_client)
-        self.artifact_api = ArtifactApi(api_client)
-        self.run_api = RunApi(api_client)
-        self.health_api = HealthApi(api_client)
+        api_client = ApiClient(config)  # type: ignore[no-untyped-call]
+        self.result_api = ResultApi(api_client)  # type: ignore[no-untyped-call]
+        self.artifact_api = ArtifactApi(api_client)  # type: ignore[no-untyped-call]
+        self.run_api = RunApi(api_client)  # type: ignore[no-untyped-call]
+        self.health_api = HealthApi(api_client)  # type: ignore[no-untyped-call]
 
     @classmethod
     def from_ibutsu_plugin(cls, ibutsu: IbutsuPlugin) -> IbutsuSender:
@@ -85,7 +85,7 @@ class IbutsuSender:
 
     @property
     def frontend_url(self) -> str:
-        return cast(str, self.health_api.get_health_info().frontend)
+        return cast(str, self.health_api.get_health_info().frontend)  # type: ignore[no-untyped-call]
 
     def _make_call(
         self, api_method: Callable[P, R], *args: P.args, **kwargs: P.kwargs
@@ -140,7 +140,7 @@ class IbutsuSender:
         if isinstance(data, bytes):
             io_bytes = BytesIO(data)
             io_bytes.name = filename
-            payload = BufferedReader(io_bytes)  # type: ignore
+            payload = BufferedReader(io_bytes)
             return payload, len(data)
         return open(data, "rb"), os.stat(data).st_size
 
