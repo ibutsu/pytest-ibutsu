@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from .modeling import validate_uuid_string
 
@@ -11,14 +11,11 @@ logger = logging.getLogger(__name__)
 
 try:
     import boto3
-    from botocore.exceptions import BotoCoreError, ClientError
+    from botocore.exceptions import ClientError
 except ImportError:
     boto3 = None
     BotoCoreError = None
     ClientError = None
-
-if TYPE_CHECKING:
-    from .pytest_plugin import IbutsuPlugin
 
 
 class S3Uploader:
@@ -175,13 +172,11 @@ class S3Uploader:
 
 
 def upload_to_s3(
-    ibutsu_plugin: IbutsuPlugin,
     directory: str = ".",
 ) -> None:
     """Upload pytest-ibutsu artifacts to S3.
 
     Args:
-        ibutsu_plugin: The IbutsuPlugin instance
         directory: Directory to search for artifacts
     """
     try:
