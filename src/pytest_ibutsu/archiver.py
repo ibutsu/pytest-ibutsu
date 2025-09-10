@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from .pytest_plugin import IbutsuPlugin
 
 
-from .modeling import IbutsuTestResult, IbutsuTestRun, ibutsu_converter, _safe_string
+from .modeling import IbutsuTestResult, IbutsuTestRun, ibutsu_converter
 
 logger = logging.getLogger(__name__)
 
@@ -41,33 +41,23 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
 
     def add_result(self, run: IbutsuTestRun, result: IbutsuTestResult) -> None:
         self.add_dir(f"{run.id}/{result.id}")
-        # Use cattrs converter for robust serialization with fallback protection
+        # Use cattrs converter for robust serialization
         try:
-            # First, use cattrs to unstructure the result directly
+            # Use cattrs to unstructure the result directly
             unstructured_result = ibutsu_converter.unstructure(result)
             # Filter out private attributes
             filtered_result = {
                 k: v for k, v in unstructured_result.items() if not k.startswith("_")
             }
             content = ibutsu_converter.dumps(filtered_result).encode("utf-8")
-        except (TypeError, ValueError) as e:
-            # Fallback: use to_dict() with legacy json.dumps + _safe_string
-            try:
-                import json
+        except Exception as e:
+            # Last resort: log the error and use string representation
+            logger.exception(f"Failed to serialize IbutsuTestResult {result.id}: {e}")
+            import json
 
-                content = json.dumps(result.to_dict(), default=_safe_string).encode(
-                    "utf-8"
-                )
-            except Exception as fallback_error:
-                # Last resort: log the error and use string representation
-                logger.exception(
-                    f"Failed to serialize IbutsuTestResult {result.id}: {e}, fallback error: {fallback_error}"
-                )
-                import json
-
-                content = json.dumps(
-                    {"error": "serialization_failed", "result_id": result.id}
-                ).encode("utf-8")
+            content = json.dumps(
+                {"error": "serialization_failed", "result_id": result.id}
+            ).encode("utf-8")
 
         self.add_file(f"{run.id}/{result.id}/result.json", content)
         for name, value in result._artifacts.items():
@@ -79,33 +69,23 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
 
     def add_run(self, run: IbutsuTestRun) -> None:
         self.add_dir(run.id)
-        # Use cattrs converter for robust serialization with fallback protection
+        # Use cattrs converter for robust serialization
         try:
-            # First, use cattrs to unstructure the run directly
+            # Use cattrs to unstructure the run directly
             unstructured_run = ibutsu_converter.unstructure(run)
             # Filter out private attributes
             filtered_run = {
                 k: v for k, v in unstructured_run.items() if not k.startswith("_")
             }
             content = ibutsu_converter.dumps(filtered_run).encode("utf-8")
-        except (TypeError, ValueError) as e:
-            # Fallback: use to_dict() with legacy json.dumps + _safe_string
-            try:
-                import json
+        except Exception as e:
+            # Last resort: log the error and use string representation
+            logger.exception(f"Failed to serialize IbutsuTestRun {run.id}: {e}")
+            import json
 
-                content = json.dumps(run.to_dict(), default=_safe_string).encode(
-                    "utf-8"
-                )
-            except Exception as fallback_error:
-                # Last resort: log the error and use string representation
-                logger.exception(
-                    f"Failed to serialize IbutsuTestRun {run.id}: {e}, fallback error: {fallback_error}"
-                )
-                import json
-
-                content = json.dumps(
-                    {"error": "serialization_failed", "run_id": run.id}
-                ).encode("utf-8")
+            content = json.dumps(
+                {"error": "serialization_failed", "run_id": run.id}
+            ).encode("utf-8")
 
         self.add_file(f"{run.id}/run.json", content)
         for name, value in run._artifacts.items():
