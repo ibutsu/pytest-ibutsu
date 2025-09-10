@@ -15,32 +15,32 @@ from pytest_ibutsu.s3_uploader import S3Uploader, S3UploadError, upload_to_s3
 
 
 class TestS3Uploader:
-    def test_init_without_boto3(self) -> None:
+    def test_init_without_boto3(self):
         """Test S3Uploader initialization fails when boto3 is not available."""
         with patch("pytest_ibutsu.s3_uploader.boto3", None):
             with pytest.raises(S3UploadError, match="boto3 is required"):
                 S3Uploader()
 
-    def test_init_without_bucket_name(self) -> None:
+    def test_init_without_bucket_name(self):
         """Test S3Uploader initialization fails when no bucket name is provided."""
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(S3UploadError, match="AWS bucket name is required"):
                 S3Uploader()
 
-    def test_init_with_bucket_name(self) -> None:
+    def test_init_with_bucket_name(self):
         """Test S3Uploader initialization succeeds with bucket name."""
         uploader = S3Uploader(bucket_name="test-bucket")
         assert uploader.bucket_name == "test-bucket"
         assert uploader.timeout == 180
         assert uploader.s3_client is not None
 
-    def test_init_with_env_bucket(self) -> None:
+    def test_init_with_env_bucket(self):
         """Test S3Uploader initialization uses AWS_BUCKET environment variable."""
         with patch.dict(os.environ, {"AWS_BUCKET": "env-bucket"}):
             uploader = S3Uploader()
             assert uploader.bucket_name == "env-bucket"
 
-    def test_find_uuid_tar_gz_files_first_level_only(self) -> None:
+    def test_find_uuid_tar_gz_files_first_level_only(self):
         """Test finding UUID.tar.gz files in first level only."""
         uploader = S3Uploader(bucket_name="test-bucket")
 
@@ -74,7 +74,7 @@ class TestS3Uploader:
             assert "data.ibutsu.xml" not in file_names  # Different extension
             assert "other.txt" not in file_names  # Different extension
 
-    def test_find_uuid_tar_gz_files_pattern_validation(self) -> None:
+    def test_find_uuid_tar_gz_files_pattern_validation(self):
         """Test UUID pattern validation for .tar.gz files."""
         uploader = S3Uploader(bucket_name="test-bucket")
 
@@ -104,9 +104,9 @@ class TestS3Uploader:
             assert "12345678-1234-1234-1234-123456789abc.tar.gz" in file_names
             assert "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE.tar.gz" in file_names
 
-    def test_file_exists_in_s3(self) -> None:
+    def test_file_exists_in_s3(self, s3_uploader_instance):
         """Test checking if file exists in S3 with same size."""
-        uploader = S3Uploader(bucket_name="test-bucket")
+        uploader = s3_uploader_instance
 
         # Mock successful head_object response
         with patch.object(uploader.s3_client, "head_object") as mock_head:
@@ -118,9 +118,9 @@ class TestS3Uploader:
             # File exists with different size
             assert uploader._file_exists_in_s3("test-key", 2048) is False
 
-    def test_file_exists_in_s3_not_found(self) -> None:
+    def test_file_exists_in_s3_not_found(self, s3_uploader_instance):
         """Test checking file existence when file doesn't exist in S3."""
-        uploader = S3Uploader(bucket_name="test-bucket")
+        uploader = s3_uploader_instance
 
         # Mock 404 ClientError
         error_response = {
@@ -132,26 +132,20 @@ class TestS3Uploader:
         with patch.object(uploader.s3_client, "head_object", side_effect=client_error):
             assert uploader._file_exists_in_s3("non-existent-key", 1024) is False
 
-    def test_upload_file_skips_existing(self) -> None:
+    def test_upload_file_skips_existing(self, s3_uploader_instance, shared_test_files):
         """Test that upload_file skips files that already exist with same size."""
-        uploader = S3Uploader(bucket_name="test-bucket")
+        uploader = s3_uploader_instance
+        temp_file_path = shared_test_files / "binary_content.bin"
 
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_file.write(b"test content")
-            temp_file_path = Path(temp_file.name)
+        # Mock file exists in S3 with same size
+        with patch.object(uploader, "_file_exists_in_s3", return_value=True):
+            with patch.object(uploader.s3_client, "upload_fileobj") as mock_upload:
+                assert uploader.upload_file(temp_file_path, "test-key") is None
 
-        try:
-            # Mock file exists in S3 with same size
-            with patch.object(uploader, "_file_exists_in_s3", return_value=True):
-                with patch.object(uploader.s3_client, "upload_fileobj") as mock_upload:
-                    assert uploader.upload_file(temp_file_path, "test-key") is None
+                # Should not call upload_fileobj since file exists
+                mock_upload.assert_not_called()
 
-                    # Should not call upload_fileobj since file exists
-                    mock_upload.assert_not_called()
-        finally:
-            temp_file_path.unlink()
-
-    def test_find_uuid_tar_gz_files(self) -> None:
+    def test_find_uuid_tar_gz_files(self):
         """Test finding UUID.tar.gz files specifically."""
         uploader = S3Uploader(bucket_name="test-bucket")
 
@@ -175,43 +169,37 @@ class TestS3Uploader:
             assert "test.tar.gz" not in file_names
             assert "data.ibutsu.xml" not in file_names
 
-    def test_upload_file_success(self) -> None:
+    def test_upload_file_success(self, s3_uploader_instance, shared_test_files):
         """Test successful file upload to S3."""
-        uploader = S3Uploader(bucket_name="test-bucket")
+        uploader = s3_uploader_instance
+        temp_file_path = shared_test_files / "binary_content.bin"
 
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_file.write(b"test content")
-            temp_file_path = Path(temp_file.name)
+        # Mock the upload_fileobj method since it's a complex boto3 convenience method
+        with patch.object(uploader.s3_client, "upload_fileobj") as mock_upload:
+            result = uploader.upload_file(temp_file_path, "test-key")
 
-        try:
-            # Mock the upload_fileobj method since it's a complex boto3 convenience method
-            with patch.object(uploader.s3_client, "upload_fileobj") as mock_upload:
-                result = uploader.upload_file(temp_file_path, "test-key")
+            # Verify the method was called with correct parameters
+            mock_upload.assert_called_once()
+            call_args = mock_upload.call_args
 
-                # Verify the method was called with correct parameters
-                mock_upload.assert_called_once()
-                call_args = mock_upload.call_args
+            # Check bucket and key parameters
+            assert call_args[0][1] == "test-bucket"  # Bucket
+            assert call_args[0][2] == "test-key"  # Key
 
-                # Check bucket and key parameters
-                assert call_args[0][1] == "test-bucket"  # Bucket
-                assert call_args[0][2] == "test-key"  # Key
+            # Check ExtraArgs contains ServerSideEncryption
+            extra_args = call_args[1].get("ExtraArgs", {})
+            assert extra_args.get("ServerSideEncryption") == "AES256"
 
-                # Check ExtraArgs contains ServerSideEncryption
-                extra_args = call_args[1].get("ExtraArgs", {})
-                assert extra_args.get("ServerSideEncryption") == "AES256"
+        assert result == "s3://test-bucket/test-key"
 
-            assert result == "s3://test-bucket/test-key"
-        finally:
-            temp_file_path.unlink()
-
-    def test_upload_file_not_found(self) -> None:
+    def test_upload_file_not_found(self, s3_uploader_instance):
         """Test upload fails when file doesn't exist."""
-        uploader = S3Uploader(bucket_name="test-bucket")
+        uploader = s3_uploader_instance
 
         with pytest.raises(S3UploadError, match="File .* does not exist"):
             uploader.upload_file(Path("/non/existent/file"))
 
-    def test_upload_archives(self) -> None:
+    def test_upload_archives(self):
         """Test uploading archive files."""
         uploader = S3Uploader(bucket_name="test-bucket")
 
@@ -235,35 +223,31 @@ class TestS3Uploader:
                 assert len(results) == 1
                 assert mock_upload.call_count == 1
 
-    def test_upload_file_client_error(self) -> None:
+    def test_upload_file_client_error(self, tmp_path):
         """Test S3 client error handling."""
         uploader = S3Uploader(bucket_name="test-bucket")
 
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_file.write(b"test content")
-            temp_file_path = Path(temp_file.name)
+        temp_file_path = tmp_path / "test_content.bin"
+        temp_file_path.write_bytes(b"test content")
 
-        try:
-            # Mock upload_fileobj to raise a ClientError
-            error_response = {
-                "Error": {
-                    "Code": "NoSuchBucket",
-                    "Message": "The specified bucket does not exist.",
-                },
-                "ResponseMetadata": {"HTTPStatusCode": 404},
-            }
+        # Mock upload_fileobj to raise a ClientError
+        error_response = {
+            "Error": {
+                "Code": "NoSuchBucket",
+                "Message": "The specified bucket does not exist.",
+            },
+            "ResponseMetadata": {"HTTPStatusCode": 404},
+        }
 
-            client_error = ClientError(error_response, "upload_fileobj")
+        client_error = ClientError(error_response, "upload_fileobj")
 
-            with patch.object(
-                uploader.s3_client, "upload_fileobj", side_effect=client_error
-            ):
-                with pytest.raises(S3UploadError, match="Failed to upload .* to S3"):
-                    uploader.upload_file(temp_file_path, "test-key")
-        finally:
-            temp_file_path.unlink()
+        with patch.object(
+            uploader.s3_client, "upload_fileobj", side_effect=client_error
+        ):
+            with pytest.raises(S3UploadError, match="Failed to upload .* to S3"):
+                uploader.upload_file(temp_file_path, "test-key")
 
-    def test_s3_bucket_validation_with_stubber(self) -> None:
+    def test_s3_bucket_validation_with_stubber(self):
         """Test S3 bucket validation using botocore Stubber for head_bucket operation."""
         uploader = S3Uploader(bucket_name="test-bucket")
 
@@ -279,7 +263,7 @@ class TestS3Uploader:
             response = uploader.s3_client.head_bucket(Bucket="test-bucket")
             assert response is not None
 
-    def test_s3_client_initialization_failure(self) -> None:
+    def test_s3_client_initialization_failure(self):
         """Test S3 client initialization failure."""
         with patch("pytest_ibutsu.s3_uploader.boto3") as mock_boto3:
             # Mock boto3.client to raise an exception
@@ -288,7 +272,7 @@ class TestS3Uploader:
             with pytest.raises(S3UploadError, match="Failed to initialize S3 client"):
                 S3Uploader(bucket_name="test-bucket")
 
-    def test_find_uuid_tar_gz_files_directory_not_found(self) -> None:
+    def test_find_uuid_tar_gz_files_directory_not_found(self):
         """Test find_uuid_tar_gz_files when directory doesn't exist."""
         uploader = S3Uploader(bucket_name="test-bucket")
 
@@ -297,42 +281,34 @@ class TestS3Uploader:
 
         assert files == []
 
-    def test_upload_file_s3_client_not_initialized(self) -> None:
+    def test_upload_file_s3_client_not_initialized(self, tmp_path):
         """Test upload_file when S3 client is None."""
         uploader = S3Uploader(bucket_name="test-bucket")
         uploader.s3_client = None  # Simulate uninitialized client
 
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_file.write(b"test content")
-            temp_file_path = Path(temp_file.name)
+        temp_file_path = tmp_path / "test_content.bin"
+        temp_file_path.write_bytes(b"test content")
 
-        try:
-            with pytest.raises(S3UploadError, match="S3 client not initialized"):
-                uploader.upload_file(temp_file_path)
-        finally:
-            temp_file_path.unlink()
+        with pytest.raises(S3UploadError, match="S3 client not initialized"):
+            uploader.upload_file(temp_file_path)
 
-    def test_upload_file_generic_exception(self) -> None:
+    def test_upload_file_generic_exception(self, tmp_path):
         """Test upload_file with generic (non-boto3) exception."""
         uploader = S3Uploader(bucket_name="test-bucket")
 
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_file.write(b"test content")
-            temp_file_path = Path(temp_file.name)
+        temp_file_path = tmp_path / "test_content.bin"
+        temp_file_path.write_bytes(b"test content")
 
-        try:
-            # Mock upload_fileobj to raise a generic exception
-            with patch.object(
-                uploader.s3_client,
-                "upload_fileobj",
-                side_effect=ValueError("Generic error"),
-            ):
-                with pytest.raises(S3UploadError, match="Unexpected error uploading"):
-                    uploader.upload_file(temp_file_path)
-        finally:
-            temp_file_path.unlink()
+        # Mock upload_fileobj to raise a generic exception
+        with patch.object(
+            uploader.s3_client,
+            "upload_fileobj",
+            side_effect=ValueError("Generic error"),
+        ):
+            with pytest.raises(S3UploadError, match="Unexpected error uploading"):
+                uploader.upload_file(temp_file_path)
 
-    def test_upload_artifacts_no_files_found(self) -> None:
+    def test_upload_artifacts_no_files_found(self):
         """Test upload_artifacts when no matching files are found."""
         uploader = S3Uploader(bucket_name="test-bucket")
 
@@ -346,7 +322,7 @@ class TestS3Uploader:
 
             assert results == []
 
-    def test_upload_artifacts_partial_failure(self) -> None:
+    def test_upload_artifacts_partial_failure(self):
         """Test upload_artifacts when some files fail to upload."""
         uploader = S3Uploader(bucket_name="test-bucket")
 
@@ -375,7 +351,7 @@ class TestS3Uploader:
                 assert len(results) == 1
                 assert "12345678-1234-1234-1234-123456789abc.tar.gz" in results[0]
 
-    def test_upload_artifacts_with_none_extensions(self) -> None:
+    def test_upload_artifacts_with_none_extensions(self):
         """Test upload_artifacts with None extensions (uses defaults)."""
         uploader = S3Uploader(bucket_name="test-bucket")
 
@@ -402,7 +378,7 @@ class TestS3Uploader:
 
 class TestUploadToS3Function:
     @patch("pytest_ibutsu.s3_uploader.S3Uploader")
-    def test_upload_to_s3_success(self, mock_uploader_class: Any) -> None:
+    def test_upload_to_s3_success(self, mock_uploader_class: Any):
         """Test upload_to_s3 function with successful upload."""
         mock_uploader = Mock()
         mock_uploader_class.return_value = mock_uploader
@@ -414,7 +390,7 @@ class TestUploadToS3Function:
         mock_uploader.upload_archives.assert_called_once_with(".")
 
     @patch("pytest_ibutsu.s3_uploader.S3Uploader")
-    def test_upload_to_s3_with_s3_error(self, mock_uploader_class: Any) -> None:
+    def test_upload_to_s3_with_s3_error(self, mock_uploader_class: Any):
         """Test upload_to_s3 function handles S3UploadError gracefully."""
         mock_uploader_class.side_effect = S3UploadError("Test S3 error")
         mock_plugin = Mock()
@@ -423,7 +399,7 @@ class TestUploadToS3Function:
         upload_to_s3(mock_plugin)
 
     @patch("pytest_ibutsu.s3_uploader.S3Uploader")
-    def test_upload_to_s3_with_generic_error(self, mock_uploader_class: Any) -> None:
+    def test_upload_to_s3_with_generic_error(self, mock_uploader_class: Any):
         """Test upload_to_s3 function handles generic exceptions gracefully."""
         mock_uploader_class.side_effect = ValueError("Generic error")
         mock_plugin = Mock()

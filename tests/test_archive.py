@@ -4,7 +4,6 @@ import json
 import re
 import tarfile
 import uuid
-import tempfile
 import pytest
 from collections import namedtuple
 from pathlib import Path
@@ -99,7 +98,7 @@ def test_archive_creation_comprehensive(
     pytester: pytest.Pytester,
     test_data: tuple[pytest.RunResult, str],
     subtests: SubTests,
-) -> None:
+):
     """Comprehensive test for archive creation, validation and properties."""
     result, run_id = test_data
 
@@ -137,7 +136,7 @@ def test_archive_content_run(
     request: pytest.FixtureRequest,
     archive: tarfile.TarFile,
     test_data: tuple[pytest.RunResult, str],
-) -> None:
+):
     _, run_id = test_data
     run_twice = request.node.callspec.params["test_data"].run_twice
     members = archive.getmembers()
@@ -163,7 +162,7 @@ def test_archive_content_results(
     archive: tarfile.TarFile,
     subtests: SubTests,
     test_data: tuple[pytest.RunResult, str],
-) -> None:
+):
     _, run_id = test_data
     run_twice = request.node.callspec.params["test_data"].run_twice
     members = [
@@ -197,7 +196,7 @@ def test_archive_artifacts(
     subtests: SubTests,
     artifact_name: str,
     test_data: tuple[pytest.RunResult, str],
-) -> None:
+):
     _, run_id = test_data
     run_json_tar_info = archive.extractfile(archive.getmembers()[1])
     run_json = json.load(run_json_tar_info)  # type: ignore
@@ -275,9 +274,7 @@ def pytest_collect_test(
     return run_pytest(pytester, request.param)  # type: ignore
 
 
-def test_collect(
-    pytester: pytest.Pytester, pytest_collect_test: pytest.RunResult
-) -> None:
+def test_collect(pytester: pytest.Pytester, pytest_collect_test: pytest.RunResult):
     pytest_collect_test.stdout.no_re_match_line("INTERNALERROR")
     archives = 0
     for path in pytester.path.glob("*"):
@@ -295,7 +292,7 @@ class TestIbutsuArchiverExtended:
             ("add_run", "run"),
         ],
     )
-    def test_serialization_fallback_error(self, method, data_type):
+    def test_serialization_fallback_error(self, archive_name, method, data_type):
         """Test serialization fallback when initial serialization fails."""
         # Create appropriate data object
         if data_type == "result":
@@ -306,21 +303,20 @@ class TestIbutsuArchiverExtended:
             data_obj = TestRun(id="test-run")
             args = (data_obj,)
 
-        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
-            archiver = IbutsuArchiver(tmp.name.replace(".tar.gz", ""))
+        archiver = IbutsuArchiver(archive_name)
 
-            with archiver:
-                # Mock cattrs converter to raise an exception
-                with patch(
-                    "pytest_ibutsu.archiver.ibutsu_converter.unstructure"
-                ) as mock_unstructure:
-                    mock_unstructure.side_effect = TypeError("Cattrs failed")
+        with archiver:
+            # Mock cattrs converter to raise an exception
+            with patch(
+                "pytest_ibutsu.archiver.ibutsu_converter.unstructure"
+            ) as mock_unstructure:
+                mock_unstructure.side_effect = TypeError("Cattrs failed")
 
-                    # Call the appropriate method
-                    getattr(archiver, method)(*args)
+                # Call the appropriate method
+                getattr(archiver, method)(*args)
 
-                    # Verify fallback was used
-                    assert mock_unstructure.called
+                # Verify fallback was used
+                assert mock_unstructure.called
 
     @pytest.mark.parametrize(
         "method,data_type",
@@ -329,7 +325,7 @@ class TestIbutsuArchiverExtended:
             ("add_run", "run"),
         ],
     )
-    def test_complete_serialization_failure(self, method, data_type):
+    def test_complete_serialization_failure(self, archive_name, method, data_type):
         """Test complete serialization failure for both cattrs and to_dict."""
 
         # Create failing classes that cause to_dict to fail
@@ -352,9 +348,6 @@ class TestIbutsuArchiverExtended:
             data_obj = FailingTestRun(id="test-run")
             args = (data_obj,)
             expected_error_field = "run_id"
-
-        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
-            archive_name = tmp.name.replace(".tar.gz", "")
 
         # Test with a completed archive - create and then read
         with IbutsuArchiver(archive_name) as archiver:
@@ -383,7 +376,7 @@ class TestIbutsuArchiverExtended:
             ("add_run", "run"),
         ],
     )
-    def test_artifact_file_not_found(self, method, data_type):
+    def test_artifact_file_not_found(self, tmp_path, method, data_type):
         """Test artifact handling when file is not found."""
 
         # Create appropriate data object and attach missing artifact
@@ -398,17 +391,17 @@ class TestIbutsuArchiverExtended:
         # Add an artifact that references a non-existent file
         data_obj.attach_artifact("missing_file.log", "/nonexistent/file.log")
 
-        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
-            archiver = IbutsuArchiver(tmp.name.replace(".tar.gz", ""))
+        archive_name = str(tmp_path / "test_archive")
+        archiver = IbutsuArchiver(archive_name)
 
-            with archiver:
-                # Should not raise an exception, should skip the missing file
-                getattr(archiver, method)(*args)
+        with archiver:
+            # Should not raise an exception, should skip the missing file
+            getattr(archiver, method)(*args)
 
-                # Verify only the JSON was added, not the missing artifact
-                members = archiver.tar.getmembers()
-                artifact_files = [m for m in members if "missing_file.log" in m.name]
-                assert len(artifact_files) == 0
+            # Verify only the JSON was added, not the missing artifact
+            members = archiver.tar.getmembers()
+            artifact_files = [m for m in members if "missing_file.log" in m.name]
+            assert len(artifact_files) == 0
 
     @pytest.mark.parametrize(
         "method,data_type",
@@ -417,7 +410,7 @@ class TestIbutsuArchiverExtended:
             ("add_run", "run"),
         ],
     )
-    def test_artifact_is_directory(self, method, data_type):
+    def test_artifact_is_directory(self, tmp_path, method, data_type):
         """Test artifact handling when artifact points to a directory."""
 
         # Create appropriate data object
@@ -430,32 +423,28 @@ class TestIbutsuArchiverExtended:
             args = (data_obj,)
 
         # Add an artifact that references a directory
-        with tempfile.TemporaryDirectory() as tmpdir:
-            data_obj.attach_artifact("directory.log", tmpdir)
+        artifact_dir = tmp_path / "artifact_directory"
+        artifact_dir.mkdir()
+        data_obj.attach_artifact("directory.log", str(artifact_dir))
 
-            with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
-                archiver = IbutsuArchiver(tmp.name.replace(".tar.gz", ""))
+        archive_name = str(tmp_path / "test_archive")
+        archiver = IbutsuArchiver(archive_name)
 
-                with archiver:
-                    # Should not raise an exception, should skip the directory
-                    getattr(archiver, method)(*args)
+        with archiver:
+            # Should not raise an exception, should skip the directory
+            getattr(archiver, method)(*args)
 
-                    # Verify only the JSON was added, not the directory
-                    members = archiver.tar.getmembers()
-                    artifact_files = [m for m in members if "directory.log" in m.name]
-                    assert len(artifact_files) == 0
+            # Verify only the JSON was added, not the directory
+            members = archiver.tar.getmembers()
+            artifact_files = [m for m in members if "directory.log" in m.name]
+            assert len(artifact_files) == 0
 
-    def test_get_bytes_with_string_path(self):
+    def test_get_bytes_with_string_path(self, shared_test_files):
         """Test _get_bytes with string path to file."""
-        with tempfile.NamedTemporaryFile(mode="w", delete=False) as tmp:
-            tmp.write("test content")
-            tmp.flush()
+        test_file = shared_test_files / "test_content.txt"
 
-            result = IbutsuArchiver._get_bytes(tmp.name)
-            assert result == b"test content"
-
-            # Cleanup
-            Path(tmp.name).unlink()
+        result = IbutsuArchiver._get_bytes(str(test_file))
+        assert result == b"test content"
 
     def test_get_bytes_with_bytes_input(self):
         """Test _get_bytes with bytes input."""
@@ -467,7 +456,7 @@ class TestIbutsuArchiverExtended:
 class TestDumpToArchive:
     """Test the dump_to_archive function."""
 
-    def test_dump_to_archive_integration(self, caplog):
+    def test_dump_to_archive_integration(self, tmp_path, caplog):
         """Test dump_to_archive function with mock plugin."""
         import logging
         from unittest.mock import Mock
@@ -481,47 +470,46 @@ class TestDumpToArchive:
             "result2": TestResult(test_id="test2"),
         }
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            original_cwd = Path.cwd()
-            try:
-                # Change to temporary directory for the test
-                import os
+        original_cwd = Path.cwd()
+        try:
+            # Change to temporary directory for the test
+            import os
 
-                os.chdir(tmpdir)
+            os.chdir(tmp_path)
 
-                dump_to_archive(mock_plugin)
+            dump_to_archive(mock_plugin)
 
-                # Verify the archive was created
-                archive_path = Path(f"{mock_plugin.run.id}.tar.gz")
-                assert archive_path.exists()
+            # Verify the archive was created
+            archive_path = tmp_path / f"{mock_plugin.run.id}.tar.gz"
+            assert archive_path.exists()
 
-                # Verify log message was captured
-                assert "Saved results archive" in caplog.text
-                assert mock_plugin.run.id in caplog.text
+            # Verify log message was captured
+            assert "Saved results archive" in caplog.text
+            assert mock_plugin.run.id in caplog.text
 
-            finally:
-                os.chdir(original_cwd)
+        finally:
+            os.chdir(original_cwd)
 
 
 class TestArchiverEdgeCases:
     """Test edge cases and error conditions in the archiver."""
 
-    def test_context_manager_exception_handling(self):
+    def test_context_manager_exception_handling(self, tmp_path):
         """Test that the context manager properly closes even on exceptions."""
-        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
-            archiver = IbutsuArchiver(tmp.name.replace(".tar.gz", ""))
+        archive_name = str(tmp_path / "test_archive")
+        archiver = IbutsuArchiver(archive_name)
 
-            try:
-                with archiver:
-                    # Simulate an exception during archiving
-                    raise RuntimeError("Test exception")
-            except RuntimeError:
-                pass
+        try:
+            with archiver:
+                # Simulate an exception during archiving
+                raise RuntimeError("Test exception")
+        except RuntimeError:
+            pass
 
-            # Verify the tarfile was closed properly
-            assert archiver.tar.closed
+        # Verify the tarfile was closed properly
+        assert archiver.tar.closed
 
-    def test_archiver_with_special_characters_in_content(self):
+    def test_archiver_with_special_characters_in_content(self, tmp_path):
         """Test archiver with special characters and binary content."""
         run = TestRun(id="test-run")
         result = TestResult(test_id="test1")
@@ -532,8 +520,7 @@ class TestArchiverEdgeCases:
 
         result.metadata["unicode"] = "Special chars: ñáéíóú 中文 🚀"
 
-        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
-            archive_name = tmp.name.replace(".tar.gz", "")
+        archive_name = str(tmp_path / "test_archive")
 
         # Create the archive first
         with IbutsuArchiver(archive_name) as archiver:

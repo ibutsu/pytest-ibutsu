@@ -11,7 +11,7 @@ class TestType:
 
 
 @pytest.hookimpl(trylast=True)
-def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+def pytest_collection_modifyitems(items: list[pytest.Item]):
     """This hook is needed only to test legacy behavior.
 
     It shouldn't blow up the tests if it's called.
@@ -20,12 +20,12 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         item.stash[ibutsu_result_key].metadata.update({"node_id": item.nodeid})
 
 
-def pytest_collection_finish(session: pytest.Session) -> None:
+def pytest_collection_finish(session: pytest.Session):
     ibutsu = session.config.stash[ibutsu_plugin_key]
     ibutsu.run.attach_artifact("some_artifact.log", b"some_artifact")
 
 
-def pytest_exception_interact(node: pytest.Item | pytest.Collector) -> None:
+def pytest_exception_interact(node: pytest.Item | pytest.Collector):
     result = node.stash[ibutsu_result_key]
     result.attach_artifact(
         "legacy_exception.log",
@@ -47,12 +47,12 @@ def pytest_runtest_protocol(item: pytest.Item) -> Iterator[None]:
     )
 
 
-def pytest_runtest_setup(item: pytest.Item) -> None:
+def pytest_runtest_setup(item: pytest.Item):
     item.stash[ibutsu_result_key].metadata.update({"extra_data": "runtest_setup"})
     item.stash[ibutsu_result_key].metadata.update({"test_type": TestType()})
 
 
-def pytest_runtest_teardown(item: pytest.Item) -> None:
+def pytest_runtest_teardown(item: pytest.Item):
     result = item.stash[ibutsu_result_key]
     result.attach_artifact(
         "runtest_teardown.log",
@@ -61,5 +61,5 @@ def pytest_runtest_teardown(item: pytest.Item) -> None:
 
 
 @pytest.hookimpl(tryfirst=True)
-def pytest_sessionfinish(session: pytest.Session) -> None:
+def pytest_sessionfinish(session: pytest.Session):
     session.config.stash[ibutsu_plugin_key].run.metadata["accessibility"] = True
