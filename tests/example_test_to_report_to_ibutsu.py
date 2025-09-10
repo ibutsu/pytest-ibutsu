@@ -3,7 +3,7 @@ import pytest
 pytest_plugins = "pytester"
 
 
-def test_help_message(pytester: pytest.Pytester) -> None:
+def test_help_message(pytester: pytest.Pytester):
     result = pytester.runpytest("--help")
     # fnmatch_lines does an assertion internally
     result.stdout.fnmatch_lines(
@@ -21,29 +21,29 @@ def test_help_message(pytester: pytest.Pytester) -> None:
 
 
 @pytest.mark.skip("Skipped because I'm not a fan of this test.")
-def test_mark_skip() -> None:
+def test_mark_skip():
     pass
 
 
 @pytest.mark.skipif(True, reason="Skipping due to True equaling True")
-def test_mark_skipif() -> None:
+def test_mark_skipif():
     pass
 
 
 @pytest.mark.some_marker
-def test_skip() -> None:
+def test_skip():
     pytest.skip("I really don't like this test, but I had to think about it first.")
 
 
 @pytest.mark.some_marker
-def test_pass() -> None:
+def test_pass():
     pass
 
 
-def test_fail() -> None:
+def test_fail():
     pytest.fail("I don't like tests that pass")
 
 
 @pytest.mark.some_marker
-def test_exception() -> None:
+def test_exception():
     raise Exception("Boom!")

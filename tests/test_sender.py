@@ -1,7 +1,5 @@
 """Comprehensive tests for the sender module."""
 
-import os
-import tempfile
 from unittest.mock import Mock, patch, call
 
 import pytest
@@ -115,20 +113,16 @@ class TestIbutsuSender:
         assert reader.read() == data
         reader.close()
 
-    def test_get_buffered_reader_with_file_path(self):
+    def test_get_buffered_reader_with_file_path(self, tmp_path):
         """Test _get_buffered_reader with file path."""
-        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-            f.write("test content")
-            file_path = f.name
+        test_file = tmp_path / "test_content.txt"
+        test_file.write_text("test content")
 
-        try:
-            reader, size = IbutsuSender._get_buffered_reader(file_path, "test.txt")
+        reader, size = IbutsuSender._get_buffered_reader(str(test_file), "test.txt")
 
-            assert size == len("test content")
-            assert reader.read() == b"test content"
-            reader.close()
-        finally:
-            os.unlink(file_path)
+        assert size == len("test content")
+        assert reader.read() == b"test content"
+        reader.close()
 
     def test_does_run_exist_true(self):
         """Test does_run_exist when run exists."""

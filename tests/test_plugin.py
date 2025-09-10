@@ -60,7 +60,7 @@ def isolate_ibutsu_env_vars(
 
 def test_from_config_without_project(
     isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
-) -> None:
+):
     """Test the from_config classmethod raises a UsageError when no project is specified"""
     test_config = pytester.parseconfig("--ibutsu", "http://localhost:8080/api")
 
@@ -70,7 +70,7 @@ def test_from_config_without_project(
 
 def test_from_config_with_project(
     isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
-) -> None:
+):
     """Test the from_config classmethod does not raise a UsageError when a project is specified"""
     test_config = pytester.parseconfig(
         "--ibutsu", "archive", "--ibutsu-project", "test-project"
@@ -78,9 +78,7 @@ def test_from_config_with_project(
     IbutsuPlugin.from_config(test_config)
 
 
-def test_expired_token(
-    isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
-) -> None:
+def test_expired_token(isolate_ibutsu_env_vars: None, pytester: pytest.Pytester):
     """Test the ExpiredTokenError is raised when expired token is passed"""
     min_timestamp = datetime.min.replace(
         second=0, microsecond=0, tzinfo=timezone.utc
@@ -98,7 +96,7 @@ def test_expired_token(
         IbutsuPlugin.from_config(test_config)
 
 
-def test_valid_token(isolate_ibutsu_env_vars: None, pytester: pytest.Pytester) -> None:
+def test_valid_token(isolate_ibutsu_env_vars: None, pytester: pytest.Pytester):
     """Test the ExpiredTokenError is NOT raised when valid token is passed"""
     max_timestamp = datetime.max.replace(
         second=0, microsecond=0, tzinfo=timezone.utc
@@ -117,7 +115,7 @@ def test_valid_token(isolate_ibutsu_env_vars: None, pytester: pytest.Pytester) -
 
 def test_ibutsu_data_single_pair(
     isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
-) -> None:
+):
     """Test --ibutsu-data with a single KEY=VALUE pair"""
     test_config = pytester.parseconfig(
         "--ibutsu", "archive", "--ibutsu-data", "key=value"
@@ -128,7 +126,7 @@ def test_ibutsu_data_single_pair(
 
 def test_ibutsu_data_multiple_pairs_separate_flags(
     isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
-) -> None:
+):
     """Test --ibutsu-data with multiple KEY=VALUE pairs using separate flags"""
     test_config = pytester.parseconfig(
         "--ibutsu",
@@ -147,7 +145,7 @@ def test_ibutsu_data_multiple_pairs_separate_flags(
 
 def test_ibutsu_data_nested_keys(
     isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
-) -> None:
+):
     """Test --ibutsu-data with nested keys using dot notation"""
     test_config = pytester.parseconfig(
         "--ibutsu",
@@ -169,7 +167,7 @@ def test_ibutsu_data_nested_keys(
 
 def test_ibutsu_data_argument_order_after_mode(
     isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
-) -> None:
+):
     """Test that --ibutsu-data works when placed after --ibutsu mode (issue #8)"""
     test_config = pytester.parseconfig(
         "--ibutsu", "archive", "--ibutsu-data", "key=value"
@@ -180,7 +178,7 @@ def test_ibutsu_data_argument_order_after_mode(
 
 def test_ibutsu_data_argument_order_before_mode(
     isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
-) -> None:
+):
     """Test that --ibutsu-data works when placed before --ibutsu mode"""
     test_config = pytester.parseconfig(
         "--ibutsu-data", "key=value", "--ibutsu", "archive"
@@ -191,7 +189,7 @@ def test_ibutsu_data_argument_order_before_mode(
 
 def test_ibutsu_data_mixed_order_with_multiple_values(
     isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
-) -> None:
+):
     """Test --ibutsu-data with multiple values in various argument positions"""
     test_config = pytester.parseconfig(
         "--ibutsu-data",
@@ -212,7 +210,7 @@ def test_ibutsu_data_mixed_order_with_multiple_values(
 
 def test_ibutsu_data_invalid_format_no_equals(
     isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
-) -> None:
+):
     """Test that --ibutsu-data with invalid format (no equals) raises ValueError"""
     test_config = pytester.parseconfig(
         "--ibutsu", "archive", "--ibutsu-data", "invalid_format"
@@ -225,7 +223,7 @@ def test_ibutsu_data_invalid_format_no_equals(
 
 def test_ibutsu_data_invalid_format_empty_key(
     isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
-) -> None:
+):
     """Test that --ibutsu-data with empty key part is handled"""
     test_config = pytester.parseconfig("--ibutsu", "archive", "--ibutsu-data", "=value")
     plugin = IbutsuPlugin.from_config(test_config)
@@ -235,7 +233,7 @@ def test_ibutsu_data_invalid_format_empty_key(
 
 def test_ibutsu_data_empty_value(
     isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
-) -> None:
+):
     """Test that --ibutsu-data with empty value part is handled"""
     test_config = pytester.parseconfig("--ibutsu", "archive", "--ibutsu-data", "key=")
     plugin = IbutsuPlugin.from_config(test_config)
@@ -244,7 +242,7 @@ def test_ibutsu_data_empty_value(
 
 def test_ibutsu_data_multiple_equals_in_value(
     isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
-) -> None:
+):
     """Test that --ibutsu-data handles values with multiple equals signs"""
     test_config = pytester.parseconfig(
         "--ibutsu", "archive", "--ibutsu-data", "key=value=with=equals"
@@ -257,7 +255,7 @@ def test_ibutsu_data_environment_variable_support(
     isolate_ibutsu_env_vars: None,
     pytester: pytest.Pytester,
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
+):
     """Test that IBUTSU_DATA environment variable works"""
     monkeypatch.setenv("IBUTSU_DATA", "env_key=env_value another_key=another_value")
     test_config = pytester.parseconfig("--ibutsu", "archive")
@@ -270,7 +268,7 @@ def test_ibutsu_data_cli_overrides_environment(
     isolate_ibutsu_env_vars: None,
     pytester: pytest.Pytester,
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
+):
     """Test that CLI --ibutsu-data takes precedence over environment variable"""
     monkeypatch.setenv("IBUTSU_DATA", "env_key=env_value")
     test_config = pytester.parseconfig(

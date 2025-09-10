@@ -75,12 +75,36 @@ python = ["3.11", "3.12", "3.13"]
 default-groups = ["test"]
 
 [tool.mypy]
-disallow_untyped_defs = true
+# Enable strict mode for maximum type safety
+strict = true
 
+# Additional strict settings
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+warn_unreachable = true
+strict_equality = true
+no_implicit_reexport = true
+
+# Override for third-party libraries
 [[tool.mypy.overrides]]
 module = ["ibutsu_client.*"]
-ignore_missing_imports=true
+ignore_missing_imports = true
 follow_untyped_imports = true
+
+# Override for tests directory - be more lenient with pytest functions
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+# Allow untyped function definitions for pytest functions
+disallow_untyped_defs = false
+# Allow incomplete type definitions in tests
+disallow_incomplete_defs = false
+# Don't require return type annotations for test functions
+check_untyped_defs = false
+# Allow untyped calls in tests for simplicity
+disallow_untyped_calls = false
+# Allow untyped decorators (common in pytest)
+disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
