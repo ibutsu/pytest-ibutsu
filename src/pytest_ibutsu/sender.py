@@ -23,8 +23,8 @@ from urllib3.exceptions import ProtocolError
 from urllib3.exceptions import NewConnectionError
 from urllib3.exceptions import ConnectTimeoutError
 
-from .modeling import TestResult
-from .modeling import TestRun
+from .modeling import IbutsuTestResult
+from .modeling import IbutsuTestRun
 
 
 if TYPE_CHECKING:
@@ -144,7 +144,7 @@ class IbutsuSender:
             return payload, len(data)
         return open(data, "rb"), os.stat(data).st_size
 
-    def add_or_update_run(self, run: TestRun) -> None:
+    def add_or_update_run(self, run: IbutsuTestRun) -> None:
         if self.does_run_exist(run):
             logger.debug(f"Updating run {run.id}")
             self._make_call(self.run_api.update_run, id=run.id, run=run.to_dict())
@@ -152,17 +152,19 @@ class IbutsuSender:
             logger.debug(f"Adding run {run.id}")
             self._make_call(self.run_api.add_run, run=run.to_dict())
 
-    def upload_artifacts(self, r: TestResult | TestRun) -> None:
+    def upload_artifacts(self, r: IbutsuTestResult | IbutsuTestRun) -> None:
         for filename, data in r._artifacts.items():
             try:
-                self._upload_artifact(r.id, filename, data, isinstance(r, TestRun))
+                self._upload_artifact(
+                    r.id, filename, data, isinstance(r, IbutsuTestRun)
+                )
             except (FileNotFoundError, IsADirectoryError):
                 continue
 
-    def does_run_exist(self, run: TestRun) -> bool:
+    def does_run_exist(self, run: IbutsuTestRun) -> bool:
         return bool(self._make_call(self.run_api.get_run, id=run.id))
 
-    def add_result(self, result: TestResult) -> None:
+    def add_result(self, result: IbutsuTestResult) -> None:
         logger.debug(f"Adding result {result.id}")
         self._make_call(self.result_api.add_result, result=result.to_dict())
 

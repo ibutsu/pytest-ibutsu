@@ -107,7 +107,7 @@ disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Exclude source files from test collection to prevent model classes like TestRun and TestResult from being collected as test classes
+# Exclude source files from test collection to prevent model classes like IbutsuTestRun and IbutsuTestResult from being collected as test classes
 addopts = "--ignore-glob=src/**"
 # Only collect test classes from actual test files, not from imported modules
 python_classes = ["Test*"]

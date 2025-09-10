@@ -12,8 +12,8 @@ from pytest_ibutsu.modeling import (
     _safe_string,
     ibutsu_converter,
     Summary,
-    TestRun,
-    TestResult,
+    IbutsuTestRun,
+    IbutsuTestResult,
 )
 
 
@@ -367,8 +367,8 @@ class TestSerializationIntegration:
             )
 
     def test_testrun_to_dict_with_cattrs(self):
-        """Test that TestRun.to_dict() uses cattrs properly and can serialize complex metadata."""
-        run = TestRun(component="test-component", source="test-source")
+        """Test that IbutsuTestRun.to_dict() uses cattrs properly and can serialize complex metadata."""
+        run = IbutsuTestRun(component="test-component", source="test-source")
         run.metadata["descriptor"] = list.__len__  # Add a descriptor to metadata
         run.metadata["normal_data"] = "string value"
         run.attach_artifact("test.txt", b"content")
@@ -391,8 +391,8 @@ class TestSerializationIntegration:
         assert result_dict["metadata"]["normal_data"] == "string value"
 
     def test_testresult_to_dict_with_cattrs(self):
-        """Test that TestResult.to_dict() uses cattrs properly and can serialize complex metadata."""
-        result = TestResult(test_id="test1", source="test-source")
+        """Test that IbutsuTestResult.to_dict() uses cattrs properly and can serialize complex metadata."""
+        result = IbutsuTestResult(test_id="test1", source="test-source")
         result.metadata["descriptor"] = str.upper  # Add a descriptor to metadata
         result.metadata["normal_data"] = "string value"
         result.attach_artifact("log.txt", b"log content")
@@ -545,7 +545,7 @@ class TestSummary:
     def test_summary_increment_failed(self):
         """Test incrementing failed test."""
         summary = Summary()
-        test_result = TestResult(test_id="test1", result="failed")
+        test_result = IbutsuTestResult(test_id="test1", result="failed")
 
         summary.increment(test_result)
 
@@ -556,7 +556,7 @@ class TestSummary:
     def test_summary_increment_error(self):
         """Test incrementing error test."""
         summary = Summary()
-        test_result = TestResult(test_id="test1", result="error")
+        test_result = IbutsuTestResult(test_id="test1", result="error")
 
         summary.increment(test_result)
 
@@ -566,7 +566,7 @@ class TestSummary:
     def test_summary_increment_skipped(self):
         """Test incrementing skipped test."""
         summary = Summary()
-        test_result = TestResult(test_id="test1", result="skipped")
+        test_result = IbutsuTestResult(test_id="test1", result="skipped")
 
         summary.increment(test_result)
 
@@ -576,7 +576,7 @@ class TestSummary:
     def test_summary_increment_xfailed(self):
         """Test incrementing xfailed test."""
         summary = Summary()
-        test_result = TestResult(test_id="test1", result="xfailed")
+        test_result = IbutsuTestResult(test_id="test1", result="xfailed")
 
         summary.increment(test_result)
 
@@ -586,7 +586,7 @@ class TestSummary:
     def test_summary_increment_xpassed(self):
         """Test incrementing xpassed test."""
         summary = Summary()
-        test_result = TestResult(test_id="test1", result="xpassed")
+        test_result = IbutsuTestResult(test_id="test1", result="xpassed")
 
         summary.increment(test_result)
 
@@ -596,7 +596,7 @@ class TestSummary:
     def test_summary_increment_passed(self):
         """Test incrementing passed test doesn't increment failure counters."""
         summary = Summary()
-        test_result = TestResult(test_id="test1", result="passed")
+        test_result = IbutsuTestResult(test_id="test1", result="passed")
 
         summary.increment(test_result)
 
@@ -607,10 +607,10 @@ class TestSummary:
     def test_summary_from_results(self):
         """Test creating summary from results list."""
         results = [
-            TestResult(test_id="test1", result="passed"),
-            TestResult(test_id="test2", result="failed"),
-            TestResult(test_id="test3", result="error"),
-            TestResult(test_id="test4", result="skipped"),
+            IbutsuTestResult(test_id="test1", result="passed"),
+            IbutsuTestResult(test_id="test2", result="failed"),
+            IbutsuTestResult(test_id="test3", result="error"),
+            IbutsuTestResult(test_id="test4", result="skipped"),
         ]
 
         summary = Summary.from_results(results)
@@ -622,12 +622,12 @@ class TestSummary:
         assert summary.skips == 1
 
 
-class TestTestRun:
-    """Test the TestRun class."""
+class TestIbutsuTestRun:
+    """Test the IbutsuTestRun class."""
 
     def test_testrun_initialization(self):
-        """Test TestRun default initialization."""
-        run = TestRun()
+        """Test IbutsuTestRun default initialization."""
+        run = IbutsuTestRun()
         assert run.component is None
         assert run.env is None
         assert run.source is None
@@ -640,11 +640,11 @@ class TestTestRun:
         assert validate_uuid_string(run.id)
 
     def test_testrun_custom_values(self):
-        """Test TestRun with custom values."""
+        """Test IbutsuTestRun with custom values."""
         custom_id = str(uuid.uuid4())
         metadata = {"key": "value"}
 
-        run = TestRun(
+        run = IbutsuTestRun(
             component="test-component",
             env="test-env",
             id=custom_id,
@@ -660,7 +660,7 @@ class TestTestRun:
 
     def test_testrun_start_timer(self):
         """Test start_timer method."""
-        run = TestRun()
+        run = IbutsuTestRun()
         start_time = time.time()
 
         run.start_timer()
@@ -672,7 +672,7 @@ class TestTestRun:
 
     def test_testrun_set_duration(self):
         """Test set_duration method."""
-        run = TestRun()
+        run = IbutsuTestRun()
         run.start_timer()
         time.sleep(0.01)  # Small delay
 
@@ -682,7 +682,7 @@ class TestTestRun:
 
     def test_testrun_set_duration_no_start_time(self):
         """Test set_duration without start_timer."""
-        run = TestRun()
+        run = IbutsuTestRun()
 
         run.set_duration()
 
@@ -690,7 +690,7 @@ class TestTestRun:
 
     def test_testrun_attach_artifact(self):
         """Test attach_artifact method."""
-        run = TestRun()
+        run = IbutsuTestRun()
         content = b"test content"
 
         run.attach_artifact("test.txt", content)
@@ -699,7 +699,7 @@ class TestTestRun:
 
     def test_testrun_to_dict(self):
         """Test to_dict method excludes private attributes."""
-        run = TestRun(component="test")
+        run = IbutsuTestRun(component="test")
         run.attach_artifact("test.txt", b"content")
 
         result_dict = run.to_dict()
@@ -711,10 +711,10 @@ class TestTestRun:
 
     def test_testrun_get_metadata(self):
         """Test get_metadata static method."""
-        run1 = TestRun(metadata={"key1": "value1", "shared": "from_run1"})
-        run2 = TestRun(metadata={"key2": "value2", "shared": "from_run2"})
+        run1 = IbutsuTestRun(metadata={"key1": "value1", "shared": "from_run1"})
+        run2 = IbutsuTestRun(metadata={"key2": "value2", "shared": "from_run2"})
 
-        combined = TestRun.get_metadata([run1, run2])
+        combined = IbutsuTestRun.get_metadata([run1, run2])
 
         assert combined["key1"] == "value1"
         assert combined["key2"] == "value2"
@@ -726,7 +726,7 @@ class TestTestRun:
         monkeypatch.setenv("BUILD_NUMBER", "123")
         monkeypatch.setenv("BUILD_URL", "http://jenkins.example.com/job/test-job/123")
 
-        run = TestRun()
+        run = IbutsuTestRun()
 
         assert "jenkins" in run.metadata
         assert run.metadata["jenkins"]["job_name"] == "test-job"
@@ -740,23 +740,23 @@ class TestTestRun:
         """Test IBUTSU_ENV_ID environment variable is captured."""
         monkeypatch.setenv("IBUTSU_ENV_ID", "test-env-123")
 
-        run = TestRun()
+        run = IbutsuTestRun()
 
         assert run.metadata["env_id"] == "test-env-123"
 
     def test_testrun_from_xdist_test_runs(self):
         """Test from_xdist_test_runs class method."""
         # Create test runs with results
-        run1 = TestRun(component="comp1", env="env1")
+        run1 = IbutsuTestRun(component="comp1", env="env1")
         run1._results = [
-            TestResult(test_id="test1", run_id="old-id1"),
-            TestResult(test_id="test2", run_id="old-id2"),
+            IbutsuTestResult(test_id="test1", run_id="old-id1"),
+            IbutsuTestResult(test_id="test2", run_id="old-id2"),
         ]
 
-        run2 = TestRun(component="comp2", env="env2")
-        run2._results = [TestResult(test_id="test3", run_id="old-id3")]
+        run2 = IbutsuTestRun(component="comp2", env="env2")
+        run2._results = [IbutsuTestResult(test_id="test3", run_id="old-id3")]
 
-        merged_run = TestRun.from_xdist_test_runs([run1, run2])
+        merged_run = IbutsuTestRun.from_xdist_test_runs([run1, run2])
 
         # Should use first run's properties
         assert merged_run.component == "comp1"
@@ -771,15 +771,15 @@ class TestTestRun:
 
     def test_testrun_from_sequential_test_runs(self):
         """Test from_sequential_test_runs class method."""
-        run1 = TestRun(metadata={"key1": "value1"})
-        run1._results = [TestResult(test_id="test1")]
+        run1 = IbutsuTestRun(metadata={"key1": "value1"})
+        run1._results = [IbutsuTestResult(test_id="test1")]
         run1.attach_artifact("file1.txt", b"content1")
 
-        run2 = TestRun(metadata={"key2": "value2"})
-        run2._results = [TestResult(test_id="test2")]
+        run2 = IbutsuTestRun(metadata={"key2": "value2"})
+        run2._results = [IbutsuTestResult(test_id="test2")]
         run2.attach_artifact("file2.txt", b"content2")
 
-        merged_run = TestRun.from_sequential_test_runs([run1, run2])
+        merged_run = IbutsuTestRun.from_sequential_test_runs([run1, run2])
 
         # Should combine metadata
         assert "key1" in merged_run.metadata
@@ -804,7 +804,7 @@ class TestTestRun:
             "metadata": {"key": "value"},
         }
 
-        run = TestRun.from_json(json_data)
+        run = IbutsuTestRun.from_json(json_data)
 
         assert run.id == "test-id"
         assert run.component == "test-component"
@@ -814,17 +814,17 @@ class TestTestRun:
 
     def test_from_xdist_test_runs_with_results_metadata_update(self):
         """Test from_xdist_test_runs ensures result metadata is updated correctly."""
-        run1 = TestRun(id="run1", metadata={"key1": "value1"})
-        result1 = TestResult(test_id="test1", run_id="old_run_id")
+        run1 = IbutsuTestRun(id="run1", metadata={"key1": "value1"})
+        result1 = IbutsuTestResult(test_id="test1", run_id="old_run_id")
         result1.metadata = {"original": "data"}
         run1._results = [result1]
 
-        run2 = TestRun(id="run2", metadata={"key2": "value2"})
-        result2 = TestResult(test_id="test2", run_id="old_run_id2")
+        run2 = IbutsuTestRun(id="run2", metadata={"key2": "value2"})
+        result2 = IbutsuTestResult(test_id="test2", run_id="old_run_id2")
         result2.metadata = {"original": "data2"}
         run2._results = [result2]
 
-        merged_run = TestRun.from_xdist_test_runs([run1, run2])
+        merged_run = IbutsuTestRun.from_xdist_test_runs([run1, run2])
 
         # Check that all results have the first run's ID
         for result in merged_run._results:
@@ -833,20 +833,20 @@ class TestTestRun:
 
     def test_from_sequential_test_runs_duration_calculation(self):
         """Test from_sequential_test_runs correctly sums durations."""
-        run1 = TestRun(duration=1.5)
-        run2 = TestRun(duration=2.5)
+        run1 = IbutsuTestRun(duration=1.5)
+        run2 = IbutsuTestRun(duration=2.5)
 
-        merged_run = TestRun.from_sequential_test_runs([run1, run2])
+        merged_run = IbutsuTestRun.from_sequential_test_runs([run1, run2])
 
         assert merged_run.duration == 4.0
 
 
-class TestTestResult:
-    """Test the TestResult class."""
+class TestIbutsuTestResult:
+    """Test the IbutsuTestResult class."""
 
     def test_testresult_initialization(self):
-        """Test TestResult initialization."""
-        result = TestResult(test_id="test1")
+        """Test IbutsuTestResult initialization."""
+        result = IbutsuTestResult(test_id="test1")
 
         assert result.test_id == "test1"
         assert result.component is None
@@ -870,7 +870,7 @@ class TestTestResult:
             ("param4", Mock()),  # Will use str()
         ]
 
-        params = TestResult._get_item_params(mock_item)
+        params = IbutsuTestResult._get_item_params(mock_item)
 
         assert params["param1"] == "value1"
         assert params["param2"] == "named_value"
@@ -883,7 +883,7 @@ class TestTestResult:
         mock_item = Mock()
         del mock_item.callspec  # Remove callspec to trigger exception
 
-        params = TestResult._get_item_params(mock_item)
+        params = IbutsuTestResult._get_item_params(mock_item)
 
         assert params == {}
 
@@ -896,7 +896,7 @@ class TestTestResult:
             10,
         ]
 
-        fspath = TestResult._get_item_fspath(mock_item)
+        fspath = IbutsuTestResult._get_item_fspath(mock_item)
 
         assert fspath == "test_module.py"
 
@@ -905,7 +905,7 @@ class TestTestResult:
         mock_item = Mock()
         mock_item.location = ["/regular/path/test_module.py", "test_function", 10]
 
-        fspath = TestResult._get_item_fspath(mock_item)
+        fspath = IbutsuTestResult._get_item_fspath(mock_item)
 
         assert fspath == "/regular/path/test_module.py"
 
@@ -924,7 +924,7 @@ class TestTestResult:
         mock_item = Mock()
         mock_item.iter_markers.return_value = [mock_marker1, mock_marker2]
 
-        markers = TestResult._get_item_markers(mock_item)
+        markers = IbutsuTestResult._get_item_markers(mock_item)
 
         assert len(markers) == 2
         assert markers[0]["name"] == "marker1"
@@ -951,22 +951,22 @@ class TestTestResult:
         """Test _get_classification static method."""
         # Test valid category
         reason = "Skipped due to category:automation-issue"
-        classification = TestResult._get_classification(reason)
+        classification = IbutsuTestResult._get_classification(reason)
         assert classification == "test_failure"
 
         # Test invalid category
         reason = "Skipped due to category:unknown-category"
-        classification = TestResult._get_classification(reason)
+        classification = IbutsuTestResult._get_classification(reason)
         assert classification is None
 
         # Test no category
         reason = "Just skipped"
-        classification = TestResult._get_classification(reason)
+        classification = IbutsuTestResult._get_classification(reason)
         assert classification is None
 
     def test_testresult_set_metadata_classification(self):
         """Test set_metadata_classification method."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata["skip_reason"] = "Skipped due to category:product-issue"
 
         result.set_metadata_classification()
@@ -975,7 +975,7 @@ class TestTestResult:
 
     def test_testresult_set_metadata_classification_no_reason(self):
         """Test set_metadata_classification with no reason."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
 
         result.set_metadata_classification()
 
@@ -983,7 +983,7 @@ class TestTestResult:
 
     def test_testresult_set_result_xfailed(self):
         """Test set_result method for xfailed case."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata["statuses"] = {
             "call": ("skipped", True)  # xfailed case
         }
@@ -994,7 +994,7 @@ class TestTestResult:
 
     def test_testresult_set_result_xpassed(self):
         """Test set_result method for xpassed case."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata["statuses"] = {
             "call": ("passed", True)  # xpassed case
         }
@@ -1005,7 +1005,7 @@ class TestTestResult:
 
     def test_testresult_set_result_error_in_setup(self):
         """Test set_result method for error in setup."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata["statuses"] = {"setup": ("failed", False)}
 
         result.set_result()
@@ -1014,7 +1014,7 @@ class TestTestResult:
 
     def test_testresult_set_result_failed(self):
         """Test set_result method for failed test."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata["statuses"] = {"call": ("failed", False)}
 
         result.set_result()
@@ -1023,7 +1023,7 @@ class TestTestResult:
 
     def test_testresult_set_duration(self):
         """Test set_duration method."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata["durations"] = {"setup": 1.0, "call": 2.5, "teardown": 0.5}
 
         result.set_duration()
@@ -1032,7 +1032,7 @@ class TestTestResult:
 
     def test_testresult_attach_artifact(self):
         """Test attach_artifact method."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         content = b"test content"
 
         result.attach_artifact("test.log", content)
@@ -1041,7 +1041,7 @@ class TestTestResult:
 
     def test_testresult_to_dict(self):
         """Test to_dict method excludes private attributes."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.attach_artifact("test.log", b"content")
 
         result_dict = result.to_dict()
@@ -1051,7 +1051,7 @@ class TestTestResult:
 
     def test_testresult_set_metadata_statuses(self):
         """Test set_metadata_statuses method."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata["statuses"] = {}
 
         mock_report = Mock()
@@ -1066,7 +1066,7 @@ class TestTestResult:
 
     def test_testresult_set_metadata_durations(self):
         """Test set_metadata_durations method."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata["durations"] = {}
 
         mock_report = Mock()
@@ -1079,7 +1079,7 @@ class TestTestResult:
 
     def test_testresult_set_metadata_user_properties(self):
         """Test set_metadata_user_properties method."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
 
         mock_report = Mock()
         mock_report.user_properties = [("key1", "value1"), ("key2", "value2")]
@@ -1095,7 +1095,7 @@ class TestTestResult:
         """Test set_metadata_short_tb method."""
         from _pytest._code import ExceptionInfo
 
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
 
         mock_call = Mock()
         mock_excinfo = Mock(spec=ExceptionInfo)
@@ -1115,7 +1115,7 @@ class TestTestResult:
         """Test set_metadata_exception_name method."""
         from _pytest._code import ExceptionInfo
 
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
 
         mock_call = Mock()
         mock_excinfo = Mock(spec=ExceptionInfo)
@@ -1135,7 +1135,7 @@ class TestTestResult:
             "metadata": {"key": "value"},
         }
 
-        result = TestResult.from_json(json_data)
+        result = IbutsuTestResult.from_json(json_data)
 
         assert result.test_id == "test1"
         assert result.result == "failed"
@@ -1149,7 +1149,7 @@ class TestTestResult:
         del mock_item.location
         mock_item.path = "/path/to/test.py"
 
-        result = TestResult._get_test_idents(mock_item)
+        result = IbutsuTestResult._get_test_idents(mock_item)
         assert result == "/path/to/test.py"
 
     def test_get_test_idents_with_path_attribute_error(self):
@@ -1160,12 +1160,12 @@ class TestTestResult:
         del mock_item.path
         mock_item.name = "test_function"
 
-        result = TestResult._get_test_idents(mock_item)
+        result = IbutsuTestResult._get_test_idents(mock_item)
         assert result == "test_function"
 
     def test_get_xfail_reason_from_markers(self):
         """Test _get_xfail_reason with markers present."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata = {
             "markers": [{"name": "xfail", "kwargs": {"reason": "Known issue"}}]
         }
@@ -1178,7 +1178,7 @@ class TestTestResult:
 
     def test_get_xfail_reason_from_report(self):
         """Test _get_xfail_reason from report when no markers."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
 
         mock_report = Mock()
         mock_report.wasxfail = "reason: Report reason"
@@ -1188,7 +1188,7 @@ class TestTestResult:
 
     def test_get_skip_reason_from_skipif_marker(self):
         """Test _get_skip_reason with skipif marker."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata = {
             "markers": [{"name": "skipif", "kwargs": {"reason": "Condition not met"}}]
         }
@@ -1199,7 +1199,7 @@ class TestTestResult:
 
     def test_get_skip_reason_from_skip_marker(self):
         """Test _get_skip_reason with skip marker."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata = {
             "markers": [{"name": "skip", "args": ["Skipped for testing"]}]
         }
@@ -1210,7 +1210,7 @@ class TestTestResult:
 
     def test_get_skip_reason_from_skip_marker_no_args(self):
         """Test _get_skip_reason with skip marker but no args."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata = {"markers": [{"name": "skip", "args": []}]}
 
         mock_report = Mock()
@@ -1219,7 +1219,7 @@ class TestTestResult:
 
     def test_get_skip_reason_from_report_longrepr(self):
         """Test _get_skip_reason from report longrepr."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
 
         mock_report = Mock()
         mock_report.longrepr = ("file", "line", "Skipped: Test condition")
@@ -1229,7 +1229,7 @@ class TestTestResult:
 
     def test_get_skip_reason_from_report_longrepr_index_error(self):
         """Test _get_skip_reason with IndexError from longrepr."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
 
         mock_report = Mock()
         mock_report.longrepr = ("file", "line", "No Skipped: prefix")
@@ -1240,7 +1240,7 @@ class TestTestResult:
 
     def test_set_metadata_reason_for_skipped(self):
         """Test set_metadata_reason for skipped result."""
-        result = TestResult(test_id="test1", result="skipped")
+        result = IbutsuTestResult(test_id="test1", result="skipped")
         result.metadata = {"markers": [{"name": "skip", "args": ["Test reason"]}]}
 
         mock_report = Mock()
@@ -1250,7 +1250,7 @@ class TestTestResult:
 
     def test_set_metadata_reason_for_skipped_existing_reason(self):
         """Test set_metadata_reason for skipped with existing reason."""
-        result = TestResult(test_id="test1", result="skipped")
+        result = IbutsuTestResult(test_id="test1", result="skipped")
         result.metadata = {"skip_reason": "Existing reason"}
 
         mock_report = Mock()
@@ -1261,7 +1261,7 @@ class TestTestResult:
 
     def test_set_metadata_reason_for_xfailed(self):
         """Test set_metadata_reason for xfailed result."""
-        result = TestResult(test_id="test1", result="xfailed")
+        result = IbutsuTestResult(test_id="test1", result="xfailed")
         result.metadata = {
             "markers": [{"name": "xfail", "kwargs": {"reason": "Expected failure"}}]
         }
@@ -1273,7 +1273,7 @@ class TestTestResult:
 
     def test_set_result_manual(self):
         """Test set_result method for manual status."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata = {"statuses": {"call": ("manual", False)}}
 
         result.set_result()
@@ -1282,7 +1282,7 @@ class TestTestResult:
 
     def test_set_result_blocked(self):
         """Test set_result method for blocked status."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
         result.metadata = {"statuses": {"call": ("blocked", False)}}
 
         result.set_result()
@@ -1291,7 +1291,7 @@ class TestTestResult:
 
     def test_set_metadata_short_tb_without_excinfo(self):
         """Test set_metadata_short_tb when call.excinfo is not ExceptionInfo."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
 
         mock_call = Mock()
         mock_call.excinfo = None  # Not an ExceptionInfo instance
@@ -1304,7 +1304,7 @@ class TestTestResult:
 
     def test_set_metadata_exception_name_without_excinfo(self):
         """Test set_metadata_exception_name when call.excinfo is not ExceptionInfo."""
-        result = TestResult(test_id="test1")
+        result = IbutsuTestResult(test_id="test1")
 
         mock_call = Mock()
         mock_call.excinfo = None  # Not an ExceptionInfo instance
