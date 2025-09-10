@@ -11,7 +11,7 @@ from typing import Iterator, Any
 from unittest.mock import patch
 
 from pytest_ibutsu.archiver import IbutsuArchiver, dump_to_archive
-from pytest_ibutsu.modeling import TestResult, TestRun
+from pytest_ibutsu.modeling import IbutsuTestResult, IbutsuTestRun
 
 from . import expected_results
 
@@ -328,12 +328,14 @@ def test_collect(pytester: pytest.Pytester, pytest_collect_test: pytest.RunResul
         pytest.param(
             (
                 "add_result",
-                TestResult,
-                (TestRun(id="test-run"), TestResult(test_id="test1")),
+                IbutsuTestResult,
+                (IbutsuTestRun(id="test-run"), IbutsuTestResult(test_id="test1")),
             ),
             id="add_result",
         ),
-        pytest.param(("add_run", TestRun, (TestRun(id="test-run"),)), id="add_run"),
+        pytest.param(
+            ("add_run", IbutsuTestRun, (IbutsuTestRun(id="test-run"),)), id="add_run"
+        ),
     ]
 )
 def archiver_test_data(request):
@@ -344,11 +346,13 @@ def archiver_test_data(request):
     primary_obj = next(
         (obj for obj in objects if isinstance(obj, primary_type)), objects[0]
     )
-    run_obj = next((obj for obj in objects if isinstance(obj, TestRun)), None)
+    run_obj = next((obj for obj in objects if isinstance(obj, IbutsuTestRun)), None)
 
-    # For TestResult: args=(run, result), data_obj=result
-    # For TestRun: args=(run,), data_obj=run
-    args = (run_obj, primary_obj) if primary_type == TestResult else (primary_obj,)
+    # For IbutsuTestResult: args=(run, result), data_obj=result
+    # For IbutsuTestRun: args=(run,), data_obj=run
+    args = (
+        (run_obj, primary_obj) if primary_type == IbutsuTestResult else (primary_obj,)
+    )
     archive_args = (args, primary_obj)
 
     return method, primary_type, archive_args
@@ -382,23 +386,23 @@ class TestIbutsuArchiverExtended:
         method, primary_type, _ = archiver_test_data
 
         # Create failing classes that cause to_dict to fail
-        if primary_type == TestResult:
+        if primary_type == IbutsuTestResult:
 
-            class FailingTestResult(TestResult):
+            class FailingIbutsuTestResult(IbutsuTestResult):
                 def to_dict(self):
                     raise RuntimeError("to_dict failed")
 
-            run = TestRun(id="test-run")
-            data_obj = FailingTestResult(test_id="test1")
+            run = IbutsuTestRun(id="test-run")
+            data_obj = FailingIbutsuTestResult(test_id="test1")
             args = (run, data_obj)
             expected_error_field = "result_id"
-        else:  # TestRun
+        else:  # IbutsuTestRun
 
-            class FailingTestRun(TestRun):
+            class FailingIbutsuTestRun(IbutsuTestRun):
                 def to_dict(self):
                     raise RuntimeError("to_dict failed")
 
-            data_obj = FailingTestRun(id="test-run")
+            data_obj = FailingIbutsuTestRun(id="test-run")
             args = (data_obj,)
             expected_error_field = "run_id"
 
@@ -489,10 +493,10 @@ class TestDumpToArchive:
         caplog.set_level(logging.INFO)
 
         mock_plugin = Mock()
-        mock_plugin.run = TestRun(id="test-run")
+        mock_plugin.run = IbutsuTestRun(id="test-run")
         mock_plugin.results = {
-            "result1": TestResult(test_id="test1"),
-            "result2": TestResult(test_id="test2"),
+            "result1": IbutsuTestResult(test_id="test1"),
+            "result2": IbutsuTestResult(test_id="test2"),
         }
 
         original_cwd = Path.cwd()
@@ -536,8 +540,8 @@ class TestArchiverEdgeCases:
 
     def test_archiver_with_special_characters_in_content(self, tmp_path):
         """Test archiver with special characters and binary content."""
-        run = TestRun(id="test-run")
-        result = TestResult(test_id="test1")
+        run = IbutsuTestRun(id="test-run")
+        result = IbutsuTestResult(test_id="test1")
 
         # Add binary content and special characters
         binary_content = b"\x00\x01\x02\xff\xfe\xfd"

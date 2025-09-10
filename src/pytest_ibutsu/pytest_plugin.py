@@ -18,7 +18,7 @@ from typing import Iterator
 import pytest
 
 from .archiver import dump_to_archive
-from .modeling import TestResult, TestRun
+from .modeling import IbutsuTestResult, IbutsuTestRun
 from .sender import send_data_to_ibutsu
 from .s3_uploader import upload_to_s3
 
@@ -73,7 +73,7 @@ class IbutsuPlugin:
         ibutsu_project: str,
         ibutsu_no_archive: bool,
         extra_data: dict[str, Any],
-        run: TestRun,
+        run: IbutsuTestRun,
     ) -> None:
         self.ibutsu_mode = ibutsu_mode
         self.ibutsu_token = ibutsu_token
@@ -83,9 +83,9 @@ class IbutsuPlugin:
         self.enabled = enabled
         self.extra_data = extra_data
         self.run = run
-        self.workers_runs: list[TestRun] = []
+        self.workers_runs: list[IbutsuTestRun] = []
         self.workers_enabled: list[bool] = []
-        self.results: dict[str, TestResult] = {}
+        self.results: dict[str, IbutsuTestResult] = {}
         if self.ibutsu_token and self.is_token_expired(self.ibutsu_token):
             raise ExpiredTokenError("Your token has expired.")
 
@@ -228,7 +228,7 @@ class IbutsuPlugin:
                 "-o ibutsu_project or the IBUTSU_PROJECT environment variable"
             )
 
-        run = TestRun(
+        run = IbutsuTestRun(
             id=run_id,
             source=ibutsu_source,
             metadata={"project": ibutsu_project, **extra_data},
@@ -274,13 +274,13 @@ class IbutsuPlugin:
             return
         with tarfile.open(f"{self.run.id}.tar.gz", "r:gz") as archive:
             run_json = json.loads(archive.extractfile(f"{self.run.id}/run.json").read())  # type: ignore
-            prior_run = TestRun.from_json(run_json)
+            prior_run = IbutsuTestRun.from_json(run_json)
             for name, run_artifact in self._find_run_artifacts(archive):
                 prior_run.attach_artifact(name, run_artifact)
             for name in archive.getnames():
                 if name.endswith("/result.json"):
                     result_json = json.loads(archive.extractfile(name).read())  # type: ignore
-                    prior_result = TestResult.from_json(result_json)
+                    prior_result = IbutsuTestResult.from_json(result_json)
                     prior_run._results.append(prior_result)
                     # do not overwrite existing results, keep only the latest
                     if prior_result.metadata["node_id"] in self.results:
@@ -290,7 +290,7 @@ class IbutsuPlugin:
                     artifacts = self._find_result_artifacts(archive, prior_result.id)
                     for name, result_artifact in artifacts:
                         prior_result.attach_artifact(name, result_artifact)
-        self.run = TestRun.from_sequential_test_runs([self.run, prior_run])
+        self.run = IbutsuTestRun.from_sequential_test_runs([self.run, prior_run])
 
     def _update_xdist_result_ids(self) -> None:
         for result in self.results.values():
@@ -302,7 +302,7 @@ class IbutsuPlugin:
         self, session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
     ) -> None:
         for item in items:
-            result = TestResult.from_item(item)
+            result = IbutsuTestResult.from_item(item)
             item.stash[ibutsu_result_key] = result
 
     def pytest_collection_finish(self, session: pytest.Session) -> None:
@@ -386,7 +386,7 @@ class IbutsuPlugin:
             session.config.workeroutput["results"] = pickle.dumps(self.results)  # type: ignore
             return
         if is_xdist_controller(session.config) and self.workers_runs:
-            self.run = TestRun.from_xdist_test_runs(self.workers_runs)
+            self.run = IbutsuTestRun.from_xdist_test_runs(self.workers_runs)
             self._update_xdist_result_ids()
         self._load_archive()
         session.config.hook.pytest_ibutsu_before_shutdown(
@@ -418,7 +418,7 @@ class IbutsuPlugin:
 
 
 ibutsu_plugin_key = pytest.StashKey[IbutsuPlugin]()
-ibutsu_result_key = pytest.StashKey[TestResult]()
+ibutsu_result_key = pytest.StashKey[IbutsuTestResult]()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

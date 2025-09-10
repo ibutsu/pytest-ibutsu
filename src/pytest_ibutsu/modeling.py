@@ -113,21 +113,6 @@ def _safe_string(obj: object) -> str:
     return obj.encode("ascii", "xmlcharrefreplace").decode("ascii")
 
 
-# Simplified attrs serializer using cattrs converter
-def _serializer(inst: type, field: attrs.Attribute[Any], value: Any) -> Any:
-    """Simple serializer that uses cattrs for metadata fields and passes through others.
-
-    This leverages the cattrs preconf converter to handle complex nested structures
-    automatically without custom metadata-specific hooks.
-    """
-    if field and field.name == "metadata":
-        # Use cattrs converter to unstructure the metadata - it will handle
-        # nested non-serializable objects using our registered hooks
-        return ibutsu_converter.unstructure(value)
-    else:
-        return value
-
-
 @attrs.define(auto_attribs=True)
 class Summary:
     failures: int = 0
@@ -139,7 +124,7 @@ class Summary:
     collected: int = 0
     not_run: int = 0
 
-    def increment(self, test_result: TestResult) -> None:
+    def increment(self, test_result: IbutsuTestResult) -> None:
         attr = {
             "failed": "failures",
             "error": "errors",
@@ -154,7 +139,7 @@ class Summary:
         self.collected += 1
 
     @classmethod
-    def from_results(cls, results: list[TestResult]) -> Summary:
+    def from_results(cls, results: list[IbutsuTestResult]) -> Summary:
         summary = cls()
         for result in results:
             summary.increment(result)
@@ -163,7 +148,7 @@ class Summary:
 
 
 @attrs.define(auto_attribs=True)
-class TestRun:
+class IbutsuTestRun:
     component: str | None = None
     env: str | None = None
     id: str = attrs.field(factory=lambda: str(uuid.uuid4()))
@@ -171,7 +156,7 @@ class TestRun:
     source: str | None = None
     start_time: str = ""
     duration: float = 0.0
-    _results: list[TestResult] = attrs.field(factory=list)
+    _results: list[IbutsuTestResult] = attrs.field(factory=list)
     _start_unix_time: float = attrs.field(init=False, default=0.0)
     _artifacts: dict[str, bytes | str] = attrs.field(factory=dict)
     summary: Summary = attrs.field(factory=Summary)
@@ -198,21 +183,21 @@ class TestRun:
         self._artifacts[name] = content
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert TestRun to dictionary using cattrs preconf converter."""
+        """Convert IbutsuTestRun to dictionary using cattrs preconf converter."""
         # Use cattrs unstructure with custom filtering for private attributes
         unstructured = ibutsu_converter.unstructure(self)
         # Filter out private attributes (those starting with '_')
         return {k: v for k, v in unstructured.items() if not k.startswith("_")}
 
     @staticmethod
-    def get_metadata(runs: list[TestRun]) -> dict[str, Any]:
+    def get_metadata(runs: list[IbutsuTestRun]) -> dict[str, Any]:
         metadata = {}
         for run in runs:
             metadata.update(run.metadata)
         return metadata
 
     @classmethod
-    def from_xdist_test_runs(cls, runs: list[TestRun]) -> TestRun:
+    def from_xdist_test_runs(cls, runs: list[IbutsuTestRun]) -> IbutsuTestRun:
         first_run = runs[0]
         results = []
         for run in runs:
@@ -220,7 +205,7 @@ class TestRun:
                 result.run_id = first_run.id
                 result.metadata["run"] = first_run.id
                 results.append(result)
-        return TestRun(
+        return IbutsuTestRun(
             component=first_run.component,
             env=first_run.env,
             id=first_run.id,
@@ -234,9 +219,9 @@ class TestRun:
         )
 
     @classmethod
-    def from_sequential_test_runs(cls, runs: list[TestRun]) -> TestRun:
+    def from_sequential_test_runs(cls, runs: list[IbutsuTestRun]) -> IbutsuTestRun:
         latest_run = max(runs, key=lambda run: run.start_time)
-        return TestRun(
+        return IbutsuTestRun(
             component=latest_run.component,
             env=latest_run.env,
             id=latest_run.id,
@@ -250,12 +235,12 @@ class TestRun:
         )
 
     @classmethod
-    def from_json(cls, run_json: dict[str, Any]) -> TestRun:
+    def from_json(cls, run_json: dict[str, Any]) -> IbutsuTestRun:
         return ibutsu_converter.structure(run_json, cls)
 
 
 @attrs.define(auto_attribs=True)
-class TestResult:
+class IbutsuTestResult:
     FILTERED_MARKERS: ClassVar[list[str]] = ["parametrize"]
     # Convert the blocker category into an Ibutsu Classification
     BLOCKER_CATEGORY_TO_CLASSIFICATION: ClassVar[dict[str, str]] = {
@@ -305,7 +290,7 @@ class TestResult:
         return [
             ItemMarker(name=m.name, args=m.args, kwargs=m.kwargs)
             for m in item.iter_markers()
-            if m.name not in TestResult.FILTERED_MARKERS
+            if m.name not in IbutsuTestResult.FILTERED_MARKERS
         ]
 
     @staticmethod
@@ -319,7 +304,7 @@ class TestResult:
                 return item.name
 
     @classmethod
-    def from_item(cls, item: pytest.Item) -> TestResult:
+    def from_item(cls, item: pytest.Item) -> IbutsuTestResult:
         from .pytest_plugin import ibutsu_plugin_key
 
         ibutsu_plugin = item.config.stash[ibutsu_plugin_key]
@@ -341,7 +326,7 @@ class TestResult:
         )
 
     @classmethod
-    def from_json(cls, result_json: dict[str, Any]) -> TestResult:
+    def from_json(cls, result_json: dict[str, Any]) -> IbutsuTestResult:
         return ibutsu_converter.structure(result_json, cls)
 
     def _get_xfail_reason(self, report: pytest.TestReport) -> str | None:
@@ -400,7 +385,7 @@ class TestResult:
         """Get the skip/xfail classification and category from the reason"""
         try:
             category = reason.split("category:")[1].strip()
-            return TestResult.BLOCKER_CATEGORY_TO_CLASSIFICATION.get(category)
+            return IbutsuTestResult.BLOCKER_CATEGORY_TO_CLASSIFICATION.get(category)
         except IndexError:
             return None
 
@@ -469,7 +454,7 @@ class TestResult:
         self._artifacts[name] = content
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert TestResult to dictionary using cattrs preconf converter."""
+        """Convert IbutsuTestResult to dictionary using cattrs preconf converter."""
         # Use cattrs unstructure with custom filtering for private attributes
         unstructured = ibutsu_converter.unstructure(self)
         # Filter out private attributes (those starting with '_')

@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from .pytest_plugin import IbutsuPlugin
 
 
-from .modeling import TestResult, TestRun, ibutsu_converter, _safe_string
+from .modeling import IbutsuTestResult, IbutsuTestRun, ibutsu_converter, _safe_string
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
     def _get_bytes(value: bytes | str) -> bytes:
         return value if isinstance(value, bytes) else Path(value).read_bytes()
 
-    def add_result(self, run: TestRun, result: TestResult) -> None:
+    def add_result(self, run: IbutsuTestRun, result: IbutsuTestResult) -> None:
         self.add_dir(f"{run.id}/{result.id}")
         # Use cattrs converter for robust serialization with fallback protection
         try:
@@ -61,7 +61,7 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
             except Exception as fallback_error:
                 # Last resort: log the error and use string representation
                 logger.exception(
-                    f"Failed to serialize TestResult {result.id}: {e}, fallback error: {fallback_error}"
+                    f"Failed to serialize IbutsuTestResult {result.id}: {e}, fallback error: {fallback_error}"
                 )
                 import json
 
@@ -77,7 +77,7 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
                 continue
             self.add_file(f"{run.id}/{result.id}/{name}", content)
 
-    def add_run(self, run: TestRun) -> None:
+    def add_run(self, run: IbutsuTestRun) -> None:
         self.add_dir(run.id)
         # Use cattrs converter for robust serialization with fallback protection
         try:
@@ -99,7 +99,7 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
             except Exception as fallback_error:
                 # Last resort: log the error and use string representation
                 logger.exception(
-                    f"Failed to serialize TestRun {run.id}: {e}, fallback error: {fallback_error}"
+                    f"Failed to serialize IbutsuTestRun {run.id}: {e}, fallback error: {fallback_error}"
                 )
                 import json
 

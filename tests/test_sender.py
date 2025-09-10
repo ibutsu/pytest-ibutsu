@@ -14,7 +14,7 @@ from pytest_ibutsu.sender import (
     CA_BUNDLE_ENVS,
     MAX_CALL_RETRIES,
 )
-from pytest_ibutsu.modeling import TestRun, TestResult
+from pytest_ibutsu.modeling import IbutsuTestRun, IbutsuTestResult
 
 
 pytest_plugins = "pytester"
@@ -127,7 +127,7 @@ class TestIbutsuSender:
     def test_does_run_exist_true(self):
         """Test does_run_exist when run exists."""
         sender = IbutsuSender("http://example.com/api")
-        run = TestRun(id="test-run-id")
+        run = IbutsuTestRun(id="test-run-id")
 
         sender._make_call = Mock(return_value={"id": "test-run-id"})
 
@@ -139,7 +139,7 @@ class TestIbutsuSender:
     def test_does_run_exist_false(self):
         """Test does_run_exist when run doesn't exist."""
         sender = IbutsuSender("http://example.com/api")
-        run = TestRun(id="test-run-id")
+        run = IbutsuTestRun(id="test-run-id")
 
         sender._make_call = Mock(return_value=None)
 
@@ -148,7 +148,7 @@ class TestIbutsuSender:
     def test_add_or_update_run_existing(self):
         """Test add_or_update_run when run exists."""
         sender = IbutsuSender("http://example.com/api")
-        run = TestRun(id="test-run-id")
+        run = IbutsuTestRun(id="test-run-id")
 
         sender.does_run_exist = Mock(return_value=True)
         sender._make_call = Mock()
@@ -162,7 +162,7 @@ class TestIbutsuSender:
     def test_add_or_update_run_new(self):
         """Test add_or_update_run when run is new."""
         sender = IbutsuSender("http://example.com/api")
-        run = TestRun(id="test-run-id")
+        run = IbutsuTestRun(id="test-run-id")
 
         sender.does_run_exist = Mock(return_value=False)
         sender._make_call = Mock()
@@ -176,7 +176,7 @@ class TestIbutsuSender:
     def test_add_result(self):
         """Test add_result method."""
         sender = IbutsuSender("http://example.com/api")
-        result = TestResult(test_id="test-result")
+        result = IbutsuTestResult(test_id="test-result")
 
         sender._make_call = Mock()
 
@@ -187,9 +187,9 @@ class TestIbutsuSender:
         )
 
     def test_upload_artifacts_run(self):
-        """Test upload_artifacts for TestRun."""
+        """Test upload_artifacts for IbutsuTestRun."""
         sender = IbutsuSender("http://example.com/api")
-        run = TestRun(id="test-run")
+        run = IbutsuTestRun(id="test-run")
         run.attach_artifact("test.txt", b"content")
 
         sender._upload_artifact = Mock()
@@ -201,9 +201,9 @@ class TestIbutsuSender:
         )
 
     def test_upload_artifacts_result(self):
-        """Test upload_artifacts for TestResult."""
+        """Test upload_artifacts for IbutsuTestResult."""
         sender = IbutsuSender("http://example.com/api")
-        result = TestResult(test_id="test-result")
+        result = IbutsuTestResult(test_id="test-result")
         result.attach_artifact("log.txt", b"log content")
 
         sender._upload_artifact = Mock()
@@ -217,7 +217,7 @@ class TestIbutsuSender:
     def test_upload_artifacts_file_not_found(self):
         """Test upload_artifacts continues when file not found."""
         sender = IbutsuSender("http://example.com/api")
-        result = TestResult(test_id="test-result")
+        result = IbutsuTestResult(test_id="test-result")
         result.attach_artifact("missing.txt", "/nonexistent/file.txt")
 
         sender._upload_artifact = Mock(side_effect=FileNotFoundError())
@@ -283,10 +283,10 @@ class TestSendDataToIbutsu:
 
         # Mock the plugin
         mock_plugin = Mock()
-        mock_plugin.run = TestRun(id="test-run")
+        mock_plugin.run = IbutsuTestRun(id="test-run")
         mock_plugin.results = {
-            "test1": TestResult(test_id="test1"),
-            "test2": TestResult(test_id="test2"),
+            "test1": IbutsuTestResult(test_id="test1"),
+            "test2": IbutsuTestResult(test_id="test2"),
         }
 
         send_data_to_ibutsu(mock_plugin)
@@ -317,7 +317,7 @@ class TestSendDataToIbutsu:
         sender.add_result = Mock()
 
         mock_plugin = Mock()
-        mock_plugin.run = TestRun(id="test-run-123")
+        mock_plugin.run = IbutsuTestRun(id="test-run-123")
         mock_plugin.results = {}
 
         with patch.object(IbutsuSender, "from_ibutsu_plugin", return_value=sender):
@@ -343,7 +343,7 @@ class TestSendDataToIbutsu:
         sender.add_result = Mock()
 
         mock_plugin = Mock()
-        mock_plugin.run = TestRun(id="test-run")
+        mock_plugin.run = IbutsuTestRun(id="test-run")
         mock_plugin.results = {}
 
         with patch.object(IbutsuSender, "from_ibutsu_plugin", return_value=sender):
