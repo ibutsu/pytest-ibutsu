@@ -5,9 +5,9 @@ from pytest_ibutsu.pytest_plugin import ibutsu_plugin_key
 from pytest_ibutsu.pytest_plugin import ibutsu_result_key
 
 
-class TestType:
+class ExampleClassMeta:
     def __str__(self) -> str:
-        return "TestType"
+        return "ExampleClassMeta"
 
 
 @pytest.hookimpl(trylast=True)
@@ -49,7 +49,8 @@ def pytest_runtest_protocol(item: pytest.Item) -> Iterator[None]:
 
 def pytest_runtest_setup(item: pytest.Item):
     item.stash[ibutsu_result_key].metadata.update({"extra_data": "runtest_setup"})
-    item.stash[ibutsu_result_key].metadata.update({"test_type": TestType()})
+    # use test_type to demonstrate a class will be serialized as a string with the class name
+    item.stash[ibutsu_result_key].metadata.update({"test_type": ExampleClassMeta()})
 
 
 def pytest_runtest_teardown(item: pytest.Item):

@@ -32,9 +32,8 @@ def validate_uuid_string(uuid_string: str) -> bool:
 def _simple_unstructure_hook(obj: Any) -> str:
     """Simple unstructure hook that converts any non-serializable object to its string representation.
 
-    This provides a much simpler approach than custom hooks for each type.
-    Uses Python's built-in repr() which provides useful string representations
-    for most objects including descriptors, functions, methods, etc.
+    This prioritizes using obj.__class__.__name__ first, then considers other dunders
+    with __name__ available for non-serializable types.
 
     Args:
         obj: Any Python object that needs to be unstructured
@@ -43,15 +42,40 @@ def _simple_unstructure_hook(obj: Any) -> str:
         String representation of the object
     """
     try:
-        # Try repr() first as it's most informative
-        return repr(obj)
+        # First priority: use the class name
+        class_name = obj.__class__.__name__
+
+        # For non-serializable types, try to get additional context from dunders with __name__
+        if hasattr(obj, "__name__"):
+            name = getattr(obj, "__name__", None)
+            if name:
+                return f"<{class_name}: {name}>"
+
+        # Try other common dunders that might have __name__ or similar attributes
+        if hasattr(obj, "__qualname__"):
+            qualname = getattr(obj, "__qualname__", None)
+            if qualname:
+                return f"<{class_name}: {qualname}>"
+
+        if hasattr(obj, "__module__"):
+            module = getattr(obj, "__module__", None)
+            if module:
+                return f"<{class_name} from {module}>"
+
+        # Fallback to basic class name representation
+        return f"<{class_name}>"
+
     except Exception:
-        # Fallback to str() if repr() fails
+        # If accessing class name fails, try repr() as fallback
         try:
-            return str(obj)
+            return repr(obj)
         except Exception:
-            # Last resort - use the class name and object id
-            return f"<{obj.__class__.__name__} object at {hex(id(obj))}>"
+            # Last resort - try str() if repr() fails
+            try:
+                return str(obj)
+            except Exception:
+                # Absolute last resort - use object id
+                return f"<object at {hex(id(obj))}>"
 
 
 def _configure_simple_converter(converter: Any) -> None:
@@ -98,19 +122,6 @@ class ItemMarker(TypedDict):
     name: str
     args: tuple[Any, ...]
     kwargs: Mapping[str, Any]
-
-
-def _safe_string(obj: object) -> str:
-    """This will make string out of ANYTHING without having to worry about the stupid Unicode errors
-
-    This function tries to make str/unicode out of ``obj`` unless it already is one of those and
-    then it processes it so in the end there is a harmless ascii string.
-    """
-    if isinstance(obj, bytes):
-        obj = obj.decode("utf-8", "ignore")
-    elif not isinstance(obj, str):
-        obj = str(obj)
-    return obj.encode("ascii", "xmlcharrefreplace").decode("ascii")
 
 
 @attrs.define(auto_attribs=True)
@@ -436,7 +447,7 @@ class IbutsuTestResult:
     ) -> None:
         if not isinstance(call.excinfo, ExceptionInfo):
             return
-        val = _safe_string(call.excinfo.value)
+        val = _simple_unstructure_hook(call.excinfo.value)
         last_lines = "\n".join(report.longreprtext.split("\n")[-4:])
         # todo - determine if we should use normal repr
         short_tb = "{}\n{}\n{!r}".format(

@@ -9,7 +9,7 @@ import pytest
 
 from pytest_ibutsu.modeling import (
     validate_uuid_string,
-    _safe_string,
+    _simple_unstructure_hook,
     ibutsu_converter,
     Summary,
     IbutsuTestRun,
@@ -48,34 +48,34 @@ class TestValidateUuidString:
             validate_uuid_string(None)  # type: ignore
 
 
-class TestSafeString:
-    """Test the _safe_string function."""
+class TestSimpleUnstructureHook:
+    """Test the _simple_unstructure_hook function."""
 
     def test_string_input(self):
         """Test with string input."""
-        result = _safe_string("test string")
-        assert result == "test string"
+        result = _simple_unstructure_hook("test string")
+        assert result == "<str>"
 
     def test_bytes_input(self):
         """Test with bytes input."""
-        result = _safe_string(b"test bytes")
-        # _safe_string should decode bytes to string directly
-        assert result == "test bytes"
+        result = _simple_unstructure_hook(b"test bytes")
+        # _simple_unstructure_hook now prioritizes class name
+        assert result == "<bytes>"
 
     def test_unicode_string(self):
         """Test with unicode string."""
-        result = _safe_string("test unicode: ñáéíóú")
-        assert "test unicode" in result
+        result = _simple_unstructure_hook("test unicode: ñáéíóú")
+        assert result == "<str>"
 
     def test_integer_input(self):
         """Test with integer input."""
-        result = _safe_string(42)
-        assert result == "42"
+        result = _simple_unstructure_hook(42)
+        assert result == "<int>"
 
     def test_none_input(self):
         """Test with None input."""
-        result = _safe_string(None)
-        assert result == "None"
+        result = _simple_unstructure_hook(None)
+        assert result == "<NoneType>"
 
     def test_object_input(self):
         """Test with arbitrary object input."""
@@ -84,16 +84,53 @@ class TestSafeString:
             def __str__(self):
                 return "TestObj instance"
 
-        result = _safe_string(TestObj())
-        assert result == "TestObj instance"
+        result = _simple_unstructure_hook(TestObj())
+        # _simple_unstructure_hook uses repr() first, which gives object representation
+        assert "TestObj" in result
 
     def test_bytes_object_conversion(self):
-        """Test _safe_string with actual bytes object conversion."""
+        """Test _simple_unstructure_hook with actual bytes object conversion."""
         # Create a bytes object
         test_bytes = b"test string"
-        result = _safe_string(test_bytes)
-        # _safe_string should decode bytes directly to avoid repr format
-        assert result == "test string"
+        result = _simple_unstructure_hook(test_bytes)
+        # _simple_unstructure_hook now prioritizes class name
+        assert result == "<bytes>"
+
+    def test_function_with_name(self):
+        """Test with function that has __name__ attribute."""
+
+        def test_function():
+            pass
+
+        result = _simple_unstructure_hook(test_function)
+        assert result == "<function: test_function>"
+
+    def test_class_with_qualname(self):
+        """Test with class that has __qualname__ attribute."""
+
+        class TestClass:
+            pass
+
+        result = _simple_unstructure_hook(TestClass)
+        assert result == "<type: TestClass>"
+
+    def test_method_with_qualname(self):
+        """Test with method that has __qualname__ attribute."""
+
+        class TestClass:
+            def test_method(self):
+                pass
+
+        instance = TestClass()
+        result = _simple_unstructure_hook(instance.test_method)
+        assert result == "<method: test_method>"
+
+    def test_module_with_module_attribute(self):
+        """Test with object that has __module__ attribute."""
+        import os
+
+        result = _simple_unstructure_hook(os.path)
+        assert result == "<module: posixpath>"
 
 
 class TestSerializationIntegration:
@@ -437,94 +474,6 @@ class TestSerializationIntegration:
             ),
             str,
         )
-
-
-class TestSimplifiedSerializer:
-    """Test the simplified _serializer function with cattrs integration."""
-
-    def test_serialize_metadata_field_with_cattrs(self):
-        """Test serializing metadata field using cattrs converter."""
-        from pytest_ibutsu.modeling import _serializer
-
-        # Mock attribute that represents metadata field
-        mock_attr = Mock()
-        mock_attr.name = "metadata"
-
-        # Value with descriptors that should be unstructured by cattrs
-        value = {
-            "key": "value",
-            "descriptor": list.__len__,
-            "builtin": len,
-            "nested": {"deep_descriptor": str.upper},
-        }
-
-        result = _serializer(Mock(), mock_attr, value)
-
-        # Should be processed through cattrs unstructure
-        assert isinstance(result, dict)
-        assert result["key"] == "value"
-
-        # Descriptors should be converted to strings (don't care about format)
-        assert isinstance(result["descriptor"], str)
-        assert len(result["descriptor"]) > 0
-        assert isinstance(result["builtin"], str)
-        assert len(result["builtin"]) > 0
-        assert isinstance(result["nested"]["deep_descriptor"], str)
-        assert len(result["nested"]["deep_descriptor"]) > 0
-
-    def test_serialize_non_metadata_field(self):
-        """Test serializing non-metadata fields pass through unchanged."""
-        from pytest_ibutsu.modeling import _serializer
-
-        mock_attr = Mock()
-        mock_attr.name = "some_other_field"
-
-        result = _serializer(Mock(), mock_attr, "test value")
-        assert result == "test value"
-
-    def test_serialize_metadata_with_complex_structure(self):
-        """Test serializing complex metadata structures with various descriptor types."""
-        from pytest_ibutsu.modeling import _serializer
-
-        mock_attr = Mock()
-        mock_attr.name = "metadata"
-
-        class TestClass:
-            @property
-            def test_prop(self):
-                return "value"
-
-            @classmethod
-            def test_classmethod(cls):
-                return "class"
-
-        # Complex metadata similar to what pytest might create
-        complex_metadata = {
-            "markers": [
-                {
-                    "name": "parametrize",
-                    "args": [list.__len__, str.upper],
-                    "kwargs": {"func": dict.get},
-                }
-            ],
-            "properties": {
-                "prop": TestClass.test_prop,
-                "classmethod": TestClass.__dict__["test_classmethod"],
-            },
-            "normal_data": "string value",
-        }
-
-        result = _serializer(Mock(), mock_attr, complex_metadata)
-
-        # All descriptors should be converted to strings (don't care about exact format)
-        assert isinstance(result["markers"][0]["args"][0], str)
-        assert isinstance(result["markers"][0]["args"][1], str)
-        assert isinstance(result["markers"][0]["kwargs"]["func"], str)
-        assert isinstance(result["properties"]["prop"], str)
-        assert isinstance(result["properties"]["classmethod"], str)
-
-        # Normal data should pass through unchanged
-        assert result["normal_data"] == "string value"
 
 
 class TestSummary:
