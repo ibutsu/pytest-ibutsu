@@ -1,8 +1,8 @@
-## Dev environment tips
 - Use `hatch` for interacting with the project's building and environment configuration
-- Use `pre-commit run --all-files` to include all lint checks and auto fixes
+- Use `pre-commit run` to include all lint checks and auto fixes
 - Automatically work to resolve failures in the pre-commit output
 - Do not include excessive emoji in readme, contributing, and other documentation files
+- Use pytest parametrization over subtests
 
 ## Testing instructions
 - Find the CI plan in the .github/workflows folder.

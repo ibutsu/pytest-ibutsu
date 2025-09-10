@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import tarfile
 import time
@@ -50,10 +49,12 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
             filtered_result = {
                 k: v for k, v in unstructured_result.items() if not k.startswith("_")
             }
-            content = json.dumps(filtered_result).encode("utf-8")
+            content = ibutsu_converter.dumps(filtered_result).encode("utf-8")
         except (TypeError, ValueError) as e:
-            # Fallback: use to_dict() with custom serializer
+            # Fallback: use to_dict() with legacy json.dumps + _safe_string
             try:
+                import json
+
                 content = json.dumps(result.to_dict(), default=_safe_string).encode(
                     "utf-8"
                 )
@@ -62,6 +63,8 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
                 logger.exception(
                     f"Failed to serialize TestResult {result.id}: {e}, fallback error: {fallback_error}"
                 )
+                import json
+
                 content = json.dumps(
                     {"error": "serialization_failed", "result_id": result.id}
                 ).encode("utf-8")
@@ -84,10 +87,12 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
             filtered_run = {
                 k: v for k, v in unstructured_run.items() if not k.startswith("_")
             }
-            content = json.dumps(filtered_run).encode("utf-8")
+            content = ibutsu_converter.dumps(filtered_run).encode("utf-8")
         except (TypeError, ValueError) as e:
-            # Fallback: use to_dict() with custom serializer
+            # Fallback: use to_dict() with legacy json.dumps + _safe_string
             try:
+                import json
+
                 content = json.dumps(run.to_dict(), default=_safe_string).encode(
                     "utf-8"
                 )
@@ -96,6 +101,8 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
                 logger.exception(
                     f"Failed to serialize TestRun {run.id}: {e}, fallback error: {fallback_error}"
                 )
+                import json
+
                 content = json.dumps(
                     {"error": "serialization_failed", "run_id": run.id}
                 ).encode("utf-8")
