@@ -17,7 +17,6 @@ from ibutsu_client.api.artifact_api import ArtifactApi
 from ibutsu_client.api.health_api import HealthApi
 from ibutsu_client.api.result_api import ResultApi
 from ibutsu_client.api.run_api import RunApi
-from ibutsu_client.exceptions import ApiValueError
 from urllib3.exceptions import MaxRetryError
 from urllib3.exceptions import ProtocolError
 from urllib3.exceptions import NewConnectionError
@@ -90,6 +89,16 @@ class IbutsuSender:
     def _make_call(
         self, api_method: Callable[P, R], *args: P.args, **kwargs: P.kwargs
     ) -> R | None:
+        # Log method name and id once at the beginning
+        method_name = getattr(api_method, "__name__", str(api_method))
+        method_id = kwargs.get("id") or (
+            args[0] if args and isinstance(args[0], str) else None
+        )
+        logger.info(
+            f"Calling API method: {method_name}"
+            + (f" with id: {method_id}" if method_id else "")
+        )
+
         for res in self._sender_cache:
             if res.ready():
                 self._sender_cache.remove(res)
@@ -129,7 +138,7 @@ class IbutsuSender:
                         )
 
         except (MaxRetryError, ApiException, TooManyRetriesError) as e:
-            logger.exception(f"API call failed: {e}")
+            logger.exception("API call failed:")
             self._has_server_error = self._has_server_error or True
             self._server_error_tbs.append(str(e))
 
@@ -146,10 +155,8 @@ class IbutsuSender:
 
     def add_or_update_run(self, run: IbutsuTestRun) -> None:
         if self.does_run_exist(run):
-            logger.debug(f"Updating run {run.id}")
             self._make_call(self.run_api.update_run, id=run.id, run=run.to_dict())
         else:
-            logger.debug(f"Adding run {run.id}")
             self._make_call(self.run_api.add_run, run=run.to_dict())
 
     def upload_artifacts(self, r: IbutsuTestResult | IbutsuTestRun) -> None:
@@ -158,7 +165,8 @@ class IbutsuSender:
                 self._upload_artifact(
                     r.id, filename, data, isinstance(r, IbutsuTestRun)
                 )
-            except (FileNotFoundError, IsADirectoryError):
+            except Exception:
+                logger.exception(f"Uploading artifact {filename} failed, continuing...")
                 continue
 
     def does_run_exist(self, run: IbutsuTestRun) -> bool:
@@ -172,10 +180,13 @@ class IbutsuSender:
         self, id_: str, filename: str, data: bytes | str, is_run: bool = False
     ) -> None:
         kwargs = {"run_id": id_} if is_run else {"result_id": id_}
-        buffered_reader, payload_size = self._get_buffered_reader(data, filename)
-        if payload_size < UPLOAD_LIMIT:
-            try:
-                logger.debug(f"Uploading artifact {filename} for {id_}")
+        try:
+            logger.debug(f"Uploading artifact {filename} for {id_}")
+            buffered_reader, payload_size = self._get_buffered_reader(data, filename)
+            if payload_size >= UPLOAD_LIMIT:
+                logger.error("Artifact size is greater than upload limit")
+                return
+            else:
                 self._make_call(
                     self.artifact_api.upload_artifact,
                     filename,
@@ -183,13 +194,8 @@ class IbutsuSender:
                     _check_return_type=False,
                     **kwargs,
                 )
-            except ApiValueError:
-                logger.warning(
-                    f"Uploading artifact '{filename}' failed as the file closed prematurely."
-                )
-        else:
-            logger.warning("Artifact size is greater than upload limit")
-        buffered_reader.close()
+        finally:
+            buffered_reader.close()
 
 
 def send_data_to_ibutsu(ibutsu_plugin: IbutsuPlugin) -> None:

@@ -400,7 +400,7 @@ class IbutsuPlugin:
 
         if self.is_s3_mode:
             # S3 mode: upload archive to S3
-            upload_to_s3(self)
+            upload_to_s3()
         elif self.is_server_mode:
             # Server mode: send directly to Ibutsu API
             # Create archive if not disabled
