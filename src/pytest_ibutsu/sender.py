@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Callable, cast, BinaryIO
 from typing import TypeVar, ParamSpec
 
 from ibutsu_client.api_client import ApiClient
-from ibutsu_client.exceptions import ApiException
+from ibutsu_client.exceptions import ApiException, ApiValueError
 from ibutsu_client.configuration import Configuration
 from ibutsu_client.api.artifact_api import ArtifactApi
 from ibutsu_client.api.health_api import HealthApi
@@ -180,6 +180,7 @@ class IbutsuSender:
         self, id_: str, filename: str, data: bytes | str, is_run: bool = False
     ) -> None:
         kwargs = {"run_id": id_} if is_run else {"result_id": id_}
+        buffered_reader = None
         try:
             logger.debug(f"Uploading artifact {filename} for {id_}")
             buffered_reader, payload_size = self._get_buffered_reader(data, filename)
@@ -194,8 +195,13 @@ class IbutsuSender:
                     _check_return_type=False,
                     **kwargs,
                 )
+        except ApiValueError:
+            logger.error(
+                f"Uploading artifact '{filename}' failed as the file closed prematurely."
+            )
         finally:
-            buffered_reader.close()
+            if buffered_reader:
+                buffered_reader.close()
 
 
 def send_data_to_ibutsu(ibutsu_plugin: IbutsuPlugin) -> None:

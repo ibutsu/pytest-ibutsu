@@ -5,8 +5,15 @@ from pytest_ibutsu.pytest_plugin import ibutsu_plugin_key
 from pytest_ibutsu.pytest_plugin import ibutsu_result_key
 
 
-class ExampleClassMeta:
+class ExampleClassForMetadata:
     def __str__(self) -> str:
+        return "ExampleClassForMetadata"
+
+
+class ExampleClassMeta(type):
+    """Example metaclass used to test serialization of metaclass instances."""
+
+    def __str__(cls) -> str:
         return "ExampleClassMeta"
 
 
@@ -49,8 +56,10 @@ def pytest_runtest_protocol(item: pytest.Item) -> Iterator[None]:
 
 def pytest_runtest_setup(item: pytest.Item):
     item.stash[ibutsu_result_key].metadata.update({"extra_data": "runtest_setup"})
-    # use test_type to demonstrate a class will be serialized as a string with the class name
-    item.stash[ibutsu_result_key].metadata.update({"test_type": ExampleClassMeta()})
+    # use test_type to demonstrate a class instance will be serialized as a string with the class name
+    item.stash[ibutsu_result_key].metadata.update(
+        {"test_type": ExampleClassForMetadata()}
+    )
 
 
 def pytest_runtest_teardown(item: pytest.Item):

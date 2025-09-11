@@ -5,6 +5,8 @@ import uuid
 from datetime import datetime
 from unittest.mock import Mock
 
+import attrs
+import json
 import pytest
 
 from pytest_ibutsu.modeling import (
@@ -54,28 +56,28 @@ class TestSimpleUnstructureHook:
     def test_string_input(self):
         """Test with string input."""
         result = _simple_unstructure_hook("test string")
-        assert result == "<str>"
+        assert result == "test string"
 
     def test_bytes_input(self):
         """Test with bytes input."""
         result = _simple_unstructure_hook(b"test bytes")
-        # _simple_unstructure_hook now prioritizes class name
-        assert result == "<bytes>"
+        # _simple_unstructure_hook now uses str() directly
+        assert result == "b'test bytes'"
 
     def test_unicode_string(self):
         """Test with unicode string."""
         result = _simple_unstructure_hook("test unicode: ñáéíóú")
-        assert result == "<str>"
+        assert result == "test unicode: ñáéíóú"
 
     def test_integer_input(self):
         """Test with integer input."""
         result = _simple_unstructure_hook(42)
-        assert result == "<int>"
+        assert result == "42"
 
     def test_none_input(self):
         """Test with None input."""
         result = _simple_unstructure_hook(None)
-        assert result == "<NoneType>"
+        assert result == "None"
 
     def test_object_input(self):
         """Test with arbitrary object input."""
@@ -93,8 +95,8 @@ class TestSimpleUnstructureHook:
         # Create a bytes object
         test_bytes = b"test string"
         result = _simple_unstructure_hook(test_bytes)
-        # _simple_unstructure_hook now prioritizes class name
-        assert result == "<bytes>"
+        # _simple_unstructure_hook now uses str() directly
+        assert result == "b'test string'"
 
     def test_function_with_name(self):
         """Test with function that has __name__ attribute."""
@@ -103,7 +105,10 @@ class TestSimpleUnstructureHook:
             pass
 
         result = _simple_unstructure_hook(test_function)
-        assert result == "<function: test_function>"
+        # _simple_unstructure_hook now uses str() which includes memory address
+        assert result.startswith("<function ")
+        assert "test_function" in result
+        assert " at 0x" in result
 
     def test_class_with_qualname(self):
         """Test with class that has __qualname__ attribute."""
@@ -112,7 +117,9 @@ class TestSimpleUnstructureHook:
             pass
 
         result = _simple_unstructure_hook(TestClass)
-        assert result == "<type: TestClass>"
+        # _simple_unstructure_hook now uses str() which includes full class path
+        assert result.startswith("<class '")
+        assert "TestClass" in result
 
     def test_method_with_qualname(self):
         """Test with method that has __qualname__ attribute."""
@@ -123,14 +130,17 @@ class TestSimpleUnstructureHook:
 
         instance = TestClass()
         result = _simple_unstructure_hook(instance.test_method)
-        assert result == "<method: test_method>"
+        # _simple_unstructure_hook now uses str() which includes full method representation
+        assert result.startswith("<bound method ")
+        assert "TestClass.test_method" in result
 
     def test_module_with_module_attribute(self):
         """Test with object that has __module__ attribute."""
         import os
 
         result = _simple_unstructure_hook(os.path)
-        assert result == "<module: posixpath>"
+        # _simple_unstructure_hook now uses str() which includes full module representation
+        assert result.startswith("<module 'posixpath'")
 
 
 class TestSerializationIntegration:
@@ -474,6 +484,209 @@ class TestSerializationIntegration:
             ),
             str,
         )
+
+    def test_hook_factory_for_attrs_classes(self):
+        """Test that the hook factory properly handles attrs classes and excludes private attributes."""
+
+        @attrs.define
+        class TestAttrsClass:
+            public_field: str = "public"
+            another_field: int = 42
+            _private_field: str = attrs.field(default="private", init=False)
+
+        instance = TestAttrsClass()
+
+        # Test unstructure via converter
+        result = ibutsu_converter.unstructure(instance)
+
+        # Should be a dict with only public fields
+        assert isinstance(result, dict)
+        assert "public_field" in result
+        assert "another_field" in result
+        assert "_private_field" not in result
+        assert result["public_field"] == "public"
+        assert result["another_field"] == 42
+
+    def test_additional_problematic_types_handling(self):
+        """Test that the converter handles exceptions, types, and modules correctly."""
+
+        # Test exception handling
+        exception = ValueError("test error message")
+        result = ibutsu_converter.unstructure(exception)
+        assert isinstance(result, str)
+        assert "test error message" in result
+
+        # Test type object handling
+        type_obj = str
+        result = ibutsu_converter.unstructure(type_obj)
+        assert isinstance(result, str)
+        assert "str" in result
+
+        # Test module handling
+        result = ibutsu_converter.unstructure(json)
+        assert isinstance(result, str)
+        assert "json" in result
+
+    def test_comprehensive_metadata_serialization(self):
+        """Test that complex metadata with mixed types serializes correctly."""
+
+        class TestClass:
+            def method(self):
+                pass
+
+            @property
+            def prop(self):
+                return "test"
+
+        obj = TestClass()
+        complex_metadata = {
+            "function": len,
+            "method": obj.method,
+            "property": TestClass.prop,
+            "exception": ValueError("error message"),
+            "type": TestClass,
+            "module": json,
+            "nested": {
+                "builtin": list.append,
+                "normal_data": "string",
+                "number": 42,
+                "list_with_mixed": [1, len, "text", ValueError("nested error")],
+            },
+        }
+
+        # Test through IbutsuTestResult
+        result = IbutsuTestResult(
+            test_id="comprehensive_test", metadata=complex_metadata
+        )
+        result_dict = result.to_dict()
+
+        # Should be JSON serializable
+        json_str = json.dumps(result_dict)
+        assert len(json_str) > 0
+
+        # Verify round-trip
+        parsed = json.loads(json_str)
+        assert parsed["test_id"] == "comprehensive_test"
+        assert isinstance(parsed["metadata"]["function"], str)
+        assert isinstance(parsed["metadata"]["exception"], str)
+        assert "error message" in parsed["metadata"]["exception"]
+
+    def test_hook_factory_efficiency(self):
+        """Test that the hook factory approach is efficient and doesn't require manual registration."""
+
+        # Create multiple different attrs classes
+        @attrs.define
+        class ClassA:
+            field_a: str = "a"
+            _private_a: str = attrs.field(default="private_a", init=False)
+
+        @attrs.define
+        class ClassB:
+            field_b: int = 1
+            _private_b: str = attrs.field(default="private_b", init=False)
+
+        # Both should automatically work without explicit hook registration
+        instance_a = ClassA()
+        instance_b = ClassB()
+
+        result_a = ibutsu_converter.unstructure(instance_a)
+        result_b = ibutsu_converter.unstructure(instance_b)
+
+        # Both should exclude private fields automatically
+        assert "field_a" in result_a and "_private_a" not in result_a
+        assert "field_b" in result_b and "_private_b" not in result_b
+
+        # Both should be JSON serializable
+        json.dumps(result_a)
+        json.dumps(result_b)
+
+    def test_no_custom_json_encoder_needed(self):
+        """Test that CustomJSONEncoder is no longer needed."""
+
+        # Test that problematic objects that previously needed CustomJSONEncoder
+        # are now handled by cattrs hooks
+        problematic_objects = [
+            len,  # builtin function
+            ValueError("test"),  # exception
+            str,  # type object
+            json,  # module
+        ]
+
+        for obj in problematic_objects:
+            # Should be handled by cattrs unstructure hooks
+            unstructured = ibutsu_converter.unstructure(obj)
+            assert isinstance(unstructured, str)
+
+            # Should be JSON serializable without custom encoder
+            json.dumps(unstructured)  # Should not raise
+
+    def test_specific_class_hooks_registration(self):
+        """Test that specific class hooks are properly registered for IbutsuTestRun and IbutsuTestResult.
+
+        Following the pattern from https://catt.rs/en/stable/usage.html#using-factory-hooks,
+        this verifies that our main classes have dedicated hooks for better performance.
+        """
+
+        # Test IbutsuTestRun specific hook
+        run = IbutsuTestRun(component="test-component", env="production")
+        run.attach_artifact("test.txt", b"test content")
+        run.metadata["complex"] = {"nested": {"data": [1, 2, 3]}}
+
+        result_dict = run.to_dict()
+
+        # Should include all public fields
+        expected_public_fields = [
+            "component",
+            "env",
+            "id",
+            "metadata",
+            "source",
+            "start_time",
+            "duration",
+            "summary",
+        ]
+        for field in expected_public_fields:
+            assert field in result_dict, f"Missing public field: {field}"
+
+        # Should exclude all private fields
+        private_fields = ["_results", "_start_unix_time", "_artifacts"]
+        for field in private_fields:
+            assert field not in result_dict, (
+                f"Private field should be excluded: {field}"
+            )
+
+        # Test IbutsuTestResult specific hook
+        test_result = IbutsuTestResult(test_id="test123", component="test-comp")
+        test_result.attach_artifact("log.txt", b"log content")
+        test_result.metadata["test_data"] = "important info"
+
+        result_dict = test_result.to_dict()
+
+        # Should include all public fields
+        expected_public_fields = [
+            "test_id",
+            "component",
+            "env",
+            "result",
+            "id",
+            "metadata",
+            "params",
+            "run_id",
+            "source",
+            "start_time",
+            "duration",
+        ]
+        for field in expected_public_fields:
+            assert field in result_dict, f"Missing public field: {field}"
+
+        # Should exclude private fields
+        assert "_artifacts" not in result_dict, (
+            "Private field _artifacts should be excluded"
+        )
+
+        # Both should be JSON serializable
+        json.dumps(run.to_dict())
+        json.dumps(test_result.to_dict())
 
 
 class TestSummary:

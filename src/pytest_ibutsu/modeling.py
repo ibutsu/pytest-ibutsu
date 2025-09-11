@@ -12,6 +12,8 @@ from typing import TypedDict
 import types
 
 from cattrs.preconf.json import make_converter as make_json_converter
+from cattrs.gen import make_dict_unstructure_fn, override
+from attrs import has, fields
 import pytest
 
 import attrs
@@ -27,95 +29,6 @@ def validate_uuid_string(uuid_string: str) -> bool:
         return True
     except ValueError:
         return False
-
-
-def _simple_unstructure_hook(obj: Any) -> str:
-    """Simple unstructure hook that converts any non-serializable object to its string representation.
-
-    This prioritizes using obj.__class__.__name__ first, then considers other dunders
-    with __name__ available for non-serializable types.
-
-    Args:
-        obj: Any Python object that needs to be unstructured
-
-    Returns:
-        String representation of the object
-    """
-    try:
-        # First priority: use the class name
-        class_name = obj.__class__.__name__
-
-        # For non-serializable types, try to get additional context from dunders with __name__
-        if hasattr(obj, "__name__"):
-            name = getattr(obj, "__name__", None)
-            if name:
-                return f"<{class_name}: {name}>"
-
-        # Try other common dunders that might have __name__ or similar attributes
-        if hasattr(obj, "__qualname__"):
-            qualname = getattr(obj, "__qualname__", None)
-            if qualname:
-                return f"<{class_name}: {qualname}>"
-
-        if hasattr(obj, "__module__"):
-            module = getattr(obj, "__module__", None)
-            if module:
-                return f"<{class_name} from {module}>"
-
-        # Fallback to basic class name representation
-        return f"<{class_name}>"
-
-    except Exception:
-        # If accessing class name fails, try repr() as fallback
-        try:
-            return repr(obj)
-        except Exception:
-            # Last resort - try str() if repr() fails
-            try:
-                return str(obj)
-            except Exception:
-                # Absolute last resort - use object id
-                return f"<object at {hex(id(obj))}>"
-
-
-def _configure_simple_converter(converter: Any) -> None:
-    """Configure a simple converter that handles any non-serializable object with string representation.
-
-    This replaces the complex custom hooks with a single simple approach that relies on
-    Python's built-in string representations.
-
-    Args:
-        converter: A cattrs converter instance to register hooks on
-    """
-    # Register a single hook that catches all non-serializable types and converts them to strings
-    # This is much simpler than having specific hooks for each type
-
-    # Common non-serializable types that we want to convert to strings
-    non_serializable_types = [
-        property,
-        classmethod,
-        staticmethod,
-        types.MemberDescriptorType,
-        types.MethodDescriptorType,
-        types.WrapperDescriptorType,
-        types.GetSetDescriptorType,
-        types.ClassMethodDescriptorType,
-        types.BuiltinFunctionType,
-        types.BuiltinMethodType,
-        types.MethodType,
-        types.FunctionType,
-    ]
-
-    for type_to_handle in non_serializable_types:
-        converter.register_unstructure_hook(type_to_handle, _simple_unstructure_hook)
-
-
-# noinspection PyArgumentList
-ibutsu_converter = make_json_converter()
-# we need this due to broken structure - replace wit tagged union and/or consistent handling
-ibutsu_converter.register_structure_hook(str | bytes, lambda o, _: o)
-# Configure simple unstructure hooks for non-serializable types
-_configure_simple_converter(ibutsu_converter)
 
 
 class ItemMarker(TypedDict):
@@ -194,11 +107,17 @@ class IbutsuTestRun:
         self._artifacts[name] = content
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert IbutsuTestRun to dictionary using cattrs preconf converter."""
-        # Use cattrs unstructure with custom filtering for private attributes
-        unstructured = ibutsu_converter.unstructure(self)
-        # Filter out private attributes (those starting with '_')
-        return {k: v for k, v in unstructured.items() if not k.startswith("_")}
+        """Convert IbutsuTestRun to dictionary for JSON serialization.
+
+        Private attributes (starting with '_') are automatically excluded.
+        This is a convenience wrapper around cattrs unstructure.
+
+        Returns:
+            dict: JSON-serializable dictionary representation
+        """
+        result = ibutsu_converter.unstructure(self)
+        assert isinstance(result, dict)
+        return result
 
     @staticmethod
     def get_metadata(runs: list[IbutsuTestRun]) -> dict[str, Any]:
@@ -247,6 +166,16 @@ class IbutsuTestRun:
 
     @classmethod
     def from_json(cls, run_json: dict[str, Any]) -> IbutsuTestRun:
+        """Create IbutsuTestRun from JSON dictionary.
+
+        This is a convenience wrapper around cattrs structure.
+
+        Args:
+            run_json: Dictionary representation from JSON
+
+        Returns:
+            IbutsuTestRun: Reconstructed instance
+        """
         return ibutsu_converter.structure(run_json, cls)
 
 
@@ -338,6 +267,16 @@ class IbutsuTestResult:
 
     @classmethod
     def from_json(cls, result_json: dict[str, Any]) -> IbutsuTestResult:
+        """Create IbutsuTestResult from JSON dictionary.
+
+        This is a convenience wrapper around cattrs structure.
+
+        Args:
+            result_json: Dictionary representation from JSON
+
+        Returns:
+            IbutsuTestResult: Reconstructed instance
+        """
         return ibutsu_converter.structure(result_json, cls)
 
     def _get_xfail_reason(self, report: pytest.TestReport) -> str | None:
@@ -465,8 +404,162 @@ class IbutsuTestResult:
         self._artifacts[name] = content
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert IbutsuTestResult to dictionary using cattrs preconf converter."""
-        # Use cattrs unstructure with custom filtering for private attributes
-        unstructured = ibutsu_converter.unstructure(self)
-        # Filter out private attributes (those starting with '_')
-        return {k: v for k, v in unstructured.items() if not k.startswith("_")}
+        """Convert IbutsuTestResult to dictionary for JSON serialization.
+
+        Private attributes (starting with '_') are automatically excluded.
+        This is a convenience wrapper around cattrs unstructure.
+
+        Returns:
+            dict: JSON-serializable dictionary representation
+        """
+        result = ibutsu_converter.unstructure(self)
+        assert isinstance(result, dict)
+        return result
+
+
+def _simple_unstructure_hook(obj: Any) -> str:
+    """Simple unstructure hook that converts any non-serializable object to its string representation.
+
+    This prioritizes using obj.__class__.__name__ first, then considers other dunders
+    with __name__ available for non-serializable types.
+
+    Args:
+        obj: Any Python object that needs to be unstructured
+
+    Returns:
+        String representation of the object
+    """
+    try:
+        return str(obj)
+
+    except Exception:
+        # If accessing class name fails, try repr() as fallback
+        try:
+            return repr(obj)
+        except Exception:
+            # Absolute last resort - use object id
+            return f"<object at {hex(id(obj))}>"
+
+
+def _is_non_serializable_type(cls: type) -> bool:
+    """Predicate to identify non-serializable types that should be converted to strings.
+
+    This replaces the manual list with automatic detection based on type characteristics.
+    """
+    # Check for descriptor types
+    if isinstance(cls, type) and issubclass(cls, (property, classmethod, staticmethod)):
+        return True
+
+    # Check for specific non-serializable types using their module and name
+    non_serializable_names = {
+        "builtin_function_or_method",
+        "method",
+        "function",
+        "member_descriptor",
+        "method_descriptor",
+        "wrapper_descriptor",
+        "getset_descriptor",
+        "classmethod_descriptor",
+    }
+
+    return hasattr(cls, "__name__") and cls.__name__ in non_serializable_names
+
+
+def _create_attrs_unstructure_hook_factory(converter: Any) -> Any:
+    """Create a factory function for attrs unstructure hooks."""
+
+    def attrs_unstructure_hook_factory(cls: type) -> Any:
+        def unstructure_hook(instance: Any) -> dict[str, Any]:
+            # Use the standard cattrs unstructure but filter out private fields
+            full_dict = make_dict_unstructure_fn(cls, converter)(instance)
+            # Filter to only include public attrs fields (not starting with '_')
+            attrs_fields = attrs.fields_dict(cls)
+            return {
+                k: v
+                for k, v in full_dict.items()
+                if k in attrs_fields and not k.startswith("_")
+            }
+
+        return unstructure_hook
+
+    return attrs_unstructure_hook_factory
+
+
+def _configure_converter(converter: Any) -> None:
+    """Configure the converter with comprehensive hook registration.
+
+    This configures both generic hook factories and specific class hooks in one place.
+    """
+    from cattrs.gen import make_dict_unstructure_fn
+
+    # Register hook factory for attrs classes that excludes private attributes
+    converter.register_unstructure_hook_factory(
+        has,  # Predicate: any attrs class
+        _create_attrs_unstructure_hook_factory(converter),
+    )
+
+    # Register hook factory for non-serializable types, non-attrs
+    converter.register_unstructure_hook_factory(
+        _is_non_serializable_type, lambda cls: _simple_unstructure_hook
+    )
+
+    # Register hooks for additional problematic types that commonly appear in metadata
+    converter.register_unstructure_hook(BaseException, _simple_unstructure_hook)
+    converter.register_unstructure_hook(type, _simple_unstructure_hook)
+    converter.register_unstructure_hook(types.ModuleType, _simple_unstructure_hook)
+
+    # Register hook factory for all type subclasses (metaclasses)
+    def _is_metaclass(cls: type) -> bool:
+        return isinstance(cls, type) and issubclass(cls, type) and cls is not type
+
+    converter.register_unstructure_hook_factory(
+        _is_metaclass, lambda cls: _simple_unstructure_hook
+    )
+
+    # Register hook factory for custom class instances (catch-all for user-defined classes)
+    def _is_custom_class_instance(cls: type) -> bool:
+        """Detect custom class instances that should be serialized as strings.
+
+        This catches user-defined classes that don't have specific hooks.
+        """
+        # Skip built-in types, standard library types, and types already handled
+        if cls.__module__ in ("builtins", "__main__"):
+            return False
+        if cls.__module__.startswith(("collections", "typing", "json", "datetime")):
+            return False
+        if has(cls):  # Skip attrs classes (handled by factory)
+            return False
+        # Skip union types and generic types which should be handled by cattrs
+        if hasattr(cls, "__origin__") or hasattr(cls, "__args__"):
+            return False
+        # Skip types that don't have a proper __name__ (like union types)
+        if not hasattr(cls, "__name__") or "|" in str(cls):
+            return False
+        # Catch custom classes that define __str__
+        return hasattr(cls, "__str__") and getattr(cls, "__str__") is not object.__str__
+
+    converter.register_unstructure_hook_factory(
+        _is_custom_class_instance, lambda cls: _simple_unstructure_hook
+    )
+
+    # Register specific hooks for main classes (higher precedence than factory hooks)
+    # Following the pattern from https://catt.rs/en/stable/usage.html#using-factory-hooks
+    for cls in [IbutsuTestRun, IbutsuTestResult]:
+        overrides: dict[str, Any] = {}
+        for f in fields(cls):
+            # Omit private fields entirely, even if they are attr fields
+            if f.name.startswith("_"):
+                overrides[f.name] = override(omit=True)
+            else:
+                overrides[f.name] = override()
+
+        converter.register_unstructure_hook(
+            cls,
+            make_dict_unstructure_fn(cls, converter, **overrides),
+        )
+
+
+# noinspection PyArgumentList
+ibutsu_converter = make_json_converter()
+# Configure comprehensive cattrs integration with hook factories and specific class hooks
+_configure_converter(ibutsu_converter)
