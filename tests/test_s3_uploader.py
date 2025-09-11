@@ -382,9 +382,8 @@ class TestUploadToS3Function:
         """Test upload_to_s3 function with successful upload."""
         mock_uploader = Mock()
         mock_uploader_class.return_value = mock_uploader
-        mock_plugin = Mock()
 
-        upload_to_s3(mock_plugin)
+        upload_to_s3()
 
         mock_uploader_class.assert_called_once()
         mock_uploader.upload_archives.assert_called_once_with(".")
@@ -393,16 +392,14 @@ class TestUploadToS3Function:
     def test_upload_to_s3_with_s3_error(self, mock_uploader_class: Any):
         """Test upload_to_s3 function handles Exception gracefully."""
         mock_uploader_class.side_effect = Exception("Test S3 error")
-        mock_plugin = Mock()
 
         # Should not raise exception
-        upload_to_s3(mock_plugin)
+        upload_to_s3()
 
     @patch("pytest_ibutsu.s3_uploader.S3Uploader")
     def test_upload_to_s3_with_generic_error(self, mock_uploader_class: Any):
         """Test upload_to_s3 function handles generic exceptions gracefully."""
         mock_uploader_class.side_effect = ValueError("Generic error")
-        mock_plugin = Mock()
 
         # Should not raise exception
-        upload_to_s3(mock_plugin)
+        upload_to_s3()

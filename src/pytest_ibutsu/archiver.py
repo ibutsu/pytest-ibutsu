@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import tarfile
 import time
+import json
 from contextlib import AbstractContextManager
 from io import BytesIO
 from pathlib import Path
@@ -45,15 +46,12 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
         try:
             # Use cattrs to unstructure the result directly
             unstructured_result = ibutsu_converter.unstructure(result)
-            # Filter out private attributes
-            filtered_result = {
-                k: v for k, v in unstructured_result.items() if not k.startswith("_")
-            }
-            content = ibutsu_converter.dumps(filtered_result).encode("utf-8")
+            # Use standard JSON since data is already unstructured
+
+            content = json.dumps(unstructured_result).encode("utf-8")
         except Exception as e:
             # Last resort: log the error and use string representation
             logger.exception(f"Failed to serialize IbutsuTestResult {result.id}: {e}")
-            import json
 
             content = json.dumps(
                 {"error": "serialization_failed", "result_id": result.id}
@@ -73,15 +71,12 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
         try:
             # Use cattrs to unstructure the run directly
             unstructured_run = ibutsu_converter.unstructure(run)
-            # Filter out private attributes
-            filtered_run = {
-                k: v for k, v in unstructured_run.items() if not k.startswith("_")
-            }
-            content = ibutsu_converter.dumps(filtered_run).encode("utf-8")
+            # Use standard JSON since data is already unstructured
+
+            content = json.dumps(unstructured_run).encode("utf-8")
         except Exception as e:
             # Last resort: log the error and use string representation
             logger.exception(f"Failed to serialize IbutsuTestRun {run.id}: {e}")
-            import json
 
             content = json.dumps(
                 {"error": "serialization_failed", "run_id": run.id}
