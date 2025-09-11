@@ -40,55 +40,57 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
     def _get_bytes(value: bytes | str) -> bytes:
         return value if isinstance(value, bytes) else Path(value).read_bytes()
 
-    def add_result(self, run: IbutsuTestRun, result: IbutsuTestResult) -> None:
-        self.add_dir(f"{run.id}/{result.id}")
-        # Use cattrs converter for robust serialization
+    def _serialize_add_artifacts(
+        self,
+        obj: IbutsuTestResult | IbutsuTestRun,
+        base_path: str,
+        json_filename: str,
+    ) -> None:
+        """
+        Serialize an object (run or result) and its artifacts to the archive.
+
+        Args:
+            obj: The object to serialize (IbutsuTestResult or IbutsuTestRun)
+            base_path: The base path in the archive for this object
+            json_filename: The filename for the JSON data (e.g., "result.json", "run.json")
+        """
+        # Serialize the main object data
         try:
-            # Use cattrs to unstructure the result directly
-            unstructured_result = ibutsu_converter.unstructure(result)
+            # Use cattrs to unstructure the object directly
+            unstructured_data = ibutsu_converter.unstructure(obj)
             # Use standard JSON since data is already unstructured
-
-            content = json.dumps(unstructured_result).encode("utf-8")
+            content = json.dumps(unstructured_data).encode("utf-8")
         except Exception as e:
-            # Last resort: log the error and use string representation
-            logger.exception(f"Failed to serialize IbutsuTestResult {result.id}: {e}")
+            # Last resort: log the error and use error representation
+            obj_id = obj.id
+            logger.exception(
+                f"Failed to serialize {obj.__class__.__name__} {obj_id}: {e}"
+            )
 
+            id_key = "result_id" if isinstance(obj, IbutsuTestResult) else "run_id"
             content = json.dumps(
-                {"error": "serialization_failed", "result_id": result.id}
+                {"error": "serialization_failed", id_key: obj_id}
             ).encode("utf-8")
 
-        self.add_file(f"{run.id}/{result.id}/result.json", content)
-        for name, value in result._artifacts.items():
+        self.add_file(f"{base_path}/{json_filename}", content)
+
+        # Process and add artifacts
+        for name, value in obj._artifacts.items():
             try:
-                content = self._get_bytes(value)
+                artifact_content = self._get_bytes(value)
             except (FileNotFoundError, IsADirectoryError):
                 continue
-            self.add_file(f"{run.id}/{result.id}/{name}", content)
+            self.add_file(f"{base_path}/{name}", artifact_content)
+
+    def add_result(self, run: IbutsuTestRun, result: IbutsuTestResult) -> None:
+        base_path = f"{run.id}/{result.id}"
+        self.add_dir(base_path)
+        self._serialize_add_artifacts(result, base_path, "result.json")
 
     def add_run(self, run: IbutsuTestRun) -> None:
-        self.add_dir(run.id)
-        # Use cattrs converter for robust serialization
-        try:
-            # Use cattrs to unstructure the run directly
-            unstructured_run = ibutsu_converter.unstructure(run)
-            # Use standard JSON since data is already unstructured
-
-            content = json.dumps(unstructured_run).encode("utf-8")
-        except Exception as e:
-            # Last resort: log the error and use string representation
-            logger.exception(f"Failed to serialize IbutsuTestRun {run.id}: {e}")
-
-            content = json.dumps(
-                {"error": "serialization_failed", "run_id": run.id}
-            ).encode("utf-8")
-
-        self.add_file(f"{run.id}/run.json", content)
-        for name, value in run._artifacts.items():
-            try:
-                content = self._get_bytes(value)
-            except (FileNotFoundError, IsADirectoryError):
-                continue
-            self.add_file(f"{run.id}/{name}", content)
+        base_path = run.id
+        self.add_dir(base_path)
+        self._serialize_add_artifacts(run, base_path, "run.json")
 
     def __enter__(self) -> IbutsuArchiver:
         self.tar = tarfile.open(f"{self.name}.tar.gz", "w:gz")
