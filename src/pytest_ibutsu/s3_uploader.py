@@ -5,29 +5,18 @@ import os
 from pathlib import Path
 from typing import Any
 
+import boto3
+from botocore.exceptions import ClientError
+
 from .modeling import validate_uuid_string
 
 logger = logging.getLogger(__name__)
-
-try:
-    import boto3
-    from botocore.exceptions import ClientError
-except ImportError:
-    boto3 = None
-    BotoCoreError = None
-    ClientError = None
 
 
 class S3Uploader:
     """Handles uploading artifacts to Amazon S3 bucket."""
 
     def __init__(self, bucket_name: str | None = None, timeout: int = 180) -> None:
-        if boto3 is None:
-            raise Exception(
-                "boto3 is required for S3 upload functionality. "
-                "Install it with: pip install pytest-ibutsu[s3]"
-            )
-
         self.bucket_name = bucket_name or os.getenv("AWS_BUCKET")
         if not self.bucket_name:
             raise ValueError(
@@ -79,9 +68,6 @@ class S3Uploader:
             True if file exists with same size, False otherwise
         """
         try:
-            if self.s3_client is None:
-                return False
-
             response = self.s3_client.head_object(Bucket=self.bucket_name, Key=key)
             s3_file_size = response.get("ContentLength", 0)
 
