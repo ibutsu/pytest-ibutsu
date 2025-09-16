@@ -3,12 +3,15 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import boto3
 from botocore.exceptions import ClientError
 
 from .modeling import validate_uuid_string
+
+if TYPE_CHECKING:
+    from .pytest_plugin import IbutsuPlugin
 
 logger = logging.getLogger(__name__)
 
@@ -158,15 +161,27 @@ class S3Uploader:
 
 
 def upload_to_s3(
-    directory: str = ".",
+    directory: str = ".", ibutsu_plugin: IbutsuPlugin | None = None
 ) -> None:
     """Upload pytest-ibutsu artifacts to S3.
 
     Args:
         directory: Directory to search for artifacts
+        ibutsu_plugin: IbutsuPlugin instance for summary tracking
     """
     try:
         uploader = S3Uploader()
-        uploader.upload_archives(directory)
-    except Exception:
+        uploaded_urls = uploader.upload_archives(directory)
+
+        # Update summary info for terminal output
+        if ibutsu_plugin:
+            ibutsu_plugin.summary_info["s3_uploaded"] = len(uploaded_urls) > 0
+            ibutsu_plugin.summary_info["s3_upload_count"] = len(uploaded_urls)
+            ibutsu_plugin.summary_info["s3_bucket"] = uploader.bucket_name
+
+    except Exception as e:
+        if ibutsu_plugin:
+            ibutsu_plugin.summary_info["s3_upload_errors"] = 1
+            ibutsu_plugin.summary_info["errors"].append(f"S3 upload error: {str(e)}")
+        # Keep the exception logging for debugging purposes if needed
         logger.exception("Error processing archives for upload:")

@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Generator, Any, TYPE_CHECKING
 from typing import Iterator
 
+if TYPE_CHECKING:
+    from _pytest.terminal import TerminalReporter
+
 import pytest
 
 from .archiver import dump_to_archive
@@ -86,6 +89,19 @@ class IbutsuPlugin:
         self.workers_runs: list[IbutsuTestRun] = []
         self.workers_enabled: list[bool] = []
         self.results: dict[str, IbutsuTestResult] = {}
+        # Summary tracking for terminal output
+        self.summary_info: dict[str, Any] = {
+            "archive_created": False,
+            "archive_path": None,
+            "s3_uploaded": False,
+            "s3_upload_count": 0,
+            "s3_upload_errors": 0,
+            "s3_bucket": None,
+            "server_uploaded": False,
+            "server_url": None,
+            "frontend_url": None,
+            "errors": [],
+        }
         if self.ibutsu_token and self.is_token_expired(self.ibutsu_token):
             raise ExpiredTokenError("Your token has expired.")
 
@@ -400,13 +416,10 @@ class IbutsuPlugin:
 
         if self.is_s3_mode:
             # S3 mode: upload archive to S3
-            upload_to_s3()
+            upload_to_s3(ibutsu_plugin=self)
         elif self.is_server_mode:
             # Server mode: send directly to Ibutsu API
             # Create archive if not disabled
-            logger.info(
-                f"Sending data to Ibutsu API {self.ibutsu_mode} for run {self.run.id}"
-            )
             if not self.ibutsu_no_archive:
                 dump_to_archive(self)
             send_data_to_ibutsu(self)
@@ -535,3 +548,63 @@ def pytest_report_header(config: pytest.Config) -> list[str]:
         lines.append(f"run ID: {ibutsu_plugin.run.id}")
 
     return lines
+
+
+def pytest_terminal_summary(
+    terminalreporter: TerminalReporter, exitstatus: int, config: pytest.Config
+) -> None:
+    """Add pytest-ibutsu operation summary to terminal output."""
+    try:
+        plugin = config.stash[ibutsu_plugin_key]
+        if not plugin.enabled:
+            return
+    except KeyError:
+        return
+
+    summary = plugin.summary_info
+
+    # Only show summary if any operations were performed
+    if not any(
+        [summary["archive_created"], summary["s3_uploaded"], summary["server_uploaded"]]
+    ):
+        return
+
+    terminalreporter.write_sep("=", "pytest-ibutsu summary", bold=True)
+
+    # Archive summary
+    if summary["archive_created"] and summary["archive_path"]:
+        terminalreporter.write_line(f"✓ Archive created: {summary['archive_path']}")
+
+    # S3 summary
+    if plugin.is_s3_mode:
+        if summary["s3_uploaded"] and summary["s3_upload_count"] > 0:
+            bucket = summary.get("s3_bucket", "configured bucket")
+            terminalreporter.write_line(
+                f"✓ S3 upload: {summary['s3_upload_count']} file(s) uploaded to {bucket}"
+            )
+        elif summary["s3_upload_errors"] > 0:
+            bucket = summary.get("s3_bucket", "S3")
+            terminalreporter.write_line(
+                f"✗ S3 upload failed: {summary['s3_upload_errors']} error(s) uploading to {bucket}"
+            )
+        elif not summary["s3_uploaded"]:
+            terminalreporter.write_line("✗ S3 upload: No files found or upload failed")
+
+    # Server summary
+    if plugin.is_server_mode and summary["server_uploaded"]:
+        if summary["frontend_url"]:
+            terminalreporter.write_line(
+                f"✓ Results uploaded to: {summary['frontend_url']}/runs/{plugin.run.id}"
+            )
+        else:
+            terminalreporter.write_line(
+                f"✓ Results uploaded to: {summary['server_url']}"
+            )
+
+    # Error summary
+    if summary["errors"]:
+        terminalreporter.write_line("Errors encountered:")
+        for error in summary["errors"]:
+            terminalreporter.write_line(f"  - {error}")
+
+    terminalreporter.write_line("")

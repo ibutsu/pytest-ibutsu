@@ -206,7 +206,7 @@ class IbutsuSender:
 
 def send_data_to_ibutsu(ibutsu_plugin: IbutsuPlugin) -> None:
     sender = IbutsuSender.from_ibutsu_plugin(ibutsu_plugin)
-    logger.info(f"Sending data to Ibutsu API {sender.server_url}")
+
     sender.add_or_update_run(ibutsu_plugin.run)
     sender.upload_artifacts(ibutsu_plugin.run)
     for result in ibutsu_plugin.results.values():
@@ -215,7 +215,13 @@ def send_data_to_ibutsu(ibutsu_plugin: IbutsuPlugin) -> None:
     # To start update_run task on Ibutsu server we should update Run
     # https://github.com/ibutsu/pytest-ibutsu/issues/61
     sender.add_or_update_run(ibutsu_plugin.run)
+
+    # Update summary info for terminal output
+    ibutsu_plugin.summary_info["server_uploaded"] = not sender._has_server_error
+    ibutsu_plugin.summary_info["server_url"] = sender.server_url
     if not sender._has_server_error:
-        logger.info(
-            f"Results can be viewed on: {sender.frontend_url}/runs/{ibutsu_plugin.run.id}"
+        ibutsu_plugin.summary_info["frontend_url"] = sender.frontend_url
+    else:
+        ibutsu_plugin.summary_info["errors"].append(
+            f"Server upload failed to {sender.server_url}"
         )
