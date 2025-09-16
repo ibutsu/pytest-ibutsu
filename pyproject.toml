@@ -15,6 +15,7 @@ classifiers = [
 ]
 dependencies = [
   "attrs",
+  "boto3",
   "cattrs",
   "ibutsu-client>=2.1",
   "pytest",
@@ -31,10 +32,6 @@ requires-python = ">=3.11"
 Source = "https://github.com/ibutsu/pytest-ibutsu"
 Tracker = "https://github.com/ibutsu/pytest-ibutsu/issues"
 
-[project.optional-dependencies]
-s3 = [
-  "boto3",
-]
 
 [dependency-groups]
 test = [

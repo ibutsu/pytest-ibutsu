@@ -15,12 +15,6 @@ from pytest_ibutsu.s3_uploader import S3Uploader, upload_to_s3
 
 
 class TestS3Uploader:
-    def test_init_without_boto3(self):
-        """Test S3Uploader initialization fails when boto3 is not available."""
-        with patch("pytest_ibutsu.s3_uploader.boto3", None):
-            with pytest.raises(Exception, match="boto3 is required"):
-                S3Uploader()
-
     def test_init_without_bucket_name(self):
         """Test S3Uploader initialization fails when no bucket name is provided."""
         with patch.dict(os.environ, {}, clear=True):
