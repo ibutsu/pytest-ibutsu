@@ -493,3 +493,45 @@ def pytest_configure(config: pytest.Config) -> None:
     plugin = IbutsuPlugin.from_config(config)
     config.pluginmanager.register(plugin)
     config.stash[ibutsu_plugin_key] = plugin
+
+
+def pytest_report_header(config: pytest.Config) -> list[str]:
+    """Add pytest-ibutsu status information to the pytest session header."""
+    lines = []
+
+    # Get the ibutsu mode from configuration
+    ibutsu_mode = config.getoption("ibutsu_mode", default=None)
+    ibutsu_plugin = config.stash[ibutsu_plugin_key]
+    if ibutsu_mode and (ibutsu_plugin and ibutsu_plugin.enabled):
+        # Determine the mode description
+        if ibutsu_plugin.is_server_mode:
+            mode_desc = f"server mode (API: {ibutsu_plugin.ibutsu_mode})"
+            extra_info = []
+            if ibutsu_plugin.ibutsu_project:
+                extra_info.append(f"project: {ibutsu_plugin.ibutsu_project}")
+            if ibutsu_plugin.ibutsu_source != "local":
+                extra_info.append(f"source: {ibutsu_plugin.ibutsu_source}")
+            if not ibutsu_plugin.ibutsu_no_archive:
+                extra_info.append("archiving: enabled")
+            else:
+                extra_info.append("archiving: disabled")
+
+            if extra_info:
+                mode_desc += f" ({', '.join(extra_info)})"
+
+        elif ibutsu_plugin.is_archive_mode:
+            mode_desc = "archive mode (local archive creation)"
+
+        elif ibutsu_plugin.is_s3_mode:
+            mode_desc = "S3 mode (archive creation + S3 upload)"
+
+            bucket = os.getenv("AWS_BUCKET", "not configured")
+            mode_desc += f" (bucket: {bucket})"
+
+        else:
+            mode_desc = f"unknown mode: {ibutsu_plugin.ibutsu_mode}"
+
+        lines.append(f"pytest-ibutsu: {mode_desc}")
+        lines.append(f"run ID: {ibutsu_plugin.run.id}")
+
+    return lines
