@@ -39,7 +39,6 @@ test = [
   "python-jose",
   "pytest-cov",
   "coverage[toml]",
-  "boto3",
 ]
 
 [project.entry-points.pytest11]
