@@ -505,11 +505,15 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def pytest_report_header(config: pytest.Config) -> list[str]:
     """Add pytest-ibutsu status information to the pytest session header."""
-    lines = []
+    lines: list[str] = []
 
     # Get the ibutsu mode from configuration
     ibutsu_mode = config.getoption("ibutsu_mode", default=None)
-    ibutsu_plugin = config.stash[ibutsu_plugin_key]
+    try:
+        ibutsu_plugin = config.stash[ibutsu_plugin_key]
+    except KeyError:
+        # Plugin not installed or disabled - no header information to show
+        return lines
     if ibutsu_mode and (ibutsu_plugin and ibutsu_plugin.enabled):
         # Determine the mode description
         if ibutsu_plugin.is_server_mode:

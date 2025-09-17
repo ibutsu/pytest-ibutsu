@@ -87,14 +87,20 @@ class IbutsuSender:
         return cast(str, self.health_api.get_health_info().frontend)  # type: ignore[no-untyped-call]
 
     def _make_call(
-        self, api_method: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+        self,
+        api_method: Callable[P, R],
+        *args: P.args,
+        **kwargs: P.kwargs,
     ) -> R | None:
+        # Extract hide_exception from kwargs if present
+        hide_exception = kwargs.pop("hide_exception", False)
+
         # Log method name and id once at the beginning
         method_name = getattr(api_method, "__name__", str(api_method))
         method_id = kwargs.get("id") or (
             args[0] if args and isinstance(args[0], str) else None
         )
-        logger.info(
+        logger.debug(
             f"Calling API method: {method_name}"
             + (f" with id: {method_id}" if method_id else "")
         )
@@ -138,9 +144,10 @@ class IbutsuSender:
                         )
 
         except (MaxRetryError, ApiException, TooManyRetriesError) as e:
-            logger.exception("API call failed:")
-            self._has_server_error = self._has_server_error or True
-            self._server_error_tbs.append(str(e))
+            if not hide_exception:
+                logger.exception("API call failed:")
+                self._has_server_error = self._has_server_error or True
+                self._server_error_tbs.append(str(e))
 
         return None
 
@@ -154,7 +161,7 @@ class IbutsuSender:
         return open(data, "rb"), os.stat(data).st_size
 
     def add_or_update_run(self, run: IbutsuTestRun) -> None:
-        if self.does_run_exist(run):
+        if bool(self._make_call(self.run_api.get_run, hide_exception=True, id=run.id)):
             self._make_call(self.run_api.update_run, id=run.id, run=run.to_dict())
         else:
             self._make_call(self.run_api.add_run, run=run.to_dict())
@@ -169,9 +176,6 @@ class IbutsuSender:
                 logger.exception(f"Uploading artifact {filename} failed, continuing...")
                 continue
 
-    def does_run_exist(self, run: IbutsuTestRun) -> bool:
-        return bool(self._make_call(self.run_api.get_run, id=run.id))
-
     def add_result(self, result: IbutsuTestResult) -> None:
         logger.debug(f"Adding result {result.id}")
         self._make_call(self.result_api.add_result, result=result.to_dict())
@@ -179,7 +183,11 @@ class IbutsuSender:
     def _upload_artifact(
         self, id_: str, filename: str, data: bytes | str, is_run: bool = False
     ) -> None:
-        kwargs = {"run_id": id_} if is_run else {"result_id": id_}
+        kwargs: dict[str, str | bool] = {"_check_return_type": False}
+        if is_run:
+            kwargs["run_id"] = id_
+        else:
+            kwargs["result_id"] = id_
         buffered_reader = None
         try:
             logger.debug(f"Uploading artifact {filename} for {id_}")
@@ -192,7 +200,7 @@ class IbutsuSender:
                     self.artifact_api.upload_artifact,
                     filename,
                     buffered_reader,
-                    _check_return_type=False,
+                    hide_exception=False,
                     **kwargs,
                 )
         except ApiValueError:

@@ -47,7 +47,7 @@ Getting started
 
 To push your results to the Ibutsu server, use the ``--ibutsu`` option with the URL to your server::
 
-    pytest --ibutsu http://ibutsu/
+    pytest --ibutsu http://ibutsu-api.example.com/
 
 Authentication
 --------------
@@ -56,26 +56,26 @@ To authenticate against your Ibutsu server, use the ``--ibutsu-token`` option wi
 Ibutsu server. Go to your profile page, select tokens, and generate a token there. Copy and paste
 the JWT token generated into this option::
 
-    pytest --ibutsu http://ibutsu/ --ibutsu-token eyJhbGci.......CA1opEQ
+    pytest --ibutsu http://ibutsu-api.example.com/ --ibutsu-token eyJhbGci.......CA1opEQ
 
 More options
 ------------
 
 To set the source for the test results, use the ``--ibutsu-source`` option::
 
-    pytest --ibutsu http://ibutsu/ --ibutsu-source my-test-run
+    pytest --ibutsu http://ibutsu-api.example.com/ --ibutsu-source my-test-run
 
 If you want to add metadata to each result's metadata, you can use the ``--ibutsu-data`` option::
 
-    pytest --ibutsu http://ibutsu/ --ibutsu-data key=value
+    pytest --ibutsu http://ibutsu-api.example.com/ --ibutsu-data key=value
 
 You can specify multiple metadata items with spaces or with multiple ``--ibutsu-data`` options::
 
-    pytest --ibutsu http://ibutsu/ --ibutsu-data key1=value1 key2=value2
+    pytest --ibutsu http://ibutsu-api.example.com/ --ibutsu-data key1=value1 key2=value2
 
 You can also specify sub-keys via dotted notation::
 
-    pytest --ibutsu http://ibutsu/ --ibutsu-data key.subkey.susbsub=value
+    pytest --ibutsu http://ibutsu-api.example.com/ --ibutsu-data key.subkey.susbsub=value
 
 If you need to accumulate data from multiple ``pytest`` sessions, you should provide the same UUID
 into ``ibutsu-run-id`` option::
@@ -91,11 +91,11 @@ Set project
 
 If your Ibutsu server requires a project set, you can do that with the ``--ibutsu-project`` option::
 
-    pytest --ibutsu http://ibutsu/ --ibutsu-project 5eb1aff37c274bcd20002476
+    pytest --ibutsu http://ibutsu-api.example.com/ --ibutsu-project 5eb1aff37c274bcd20002476
 
 You can also use the project ``name`` field::
 
-    pytest --ibutsu http://ibutsu/ --ibutsu-project my-project
+    pytest --ibutsu http://ibutsu-api.example.com/ --ibutsu-project my-project
 
 Environment Variables
 ----------------------
@@ -110,7 +110,7 @@ The following environment variables are supported:
     # or
     export IBUTSU_MODE=s3
     # or
-    export IBUTSU_MODE=https://ibutsu.example.com
+    export IBUTSU_MODE=https://ibutsu-api.example.com
 
 - ``IBUTSU_TOKEN``: Set the JWT authentication token (equivalent to ``--ibutsu-token``)::
 
@@ -162,11 +162,7 @@ It will avoid uploading the same file twice, or overwriting a potential UUID col
 
 **Requirements for S3 upload:**
 
-1. Install the S3 dependencies::
-
-    pip install pytest-ibutsu[s3]
-
-2. Configure AWS credentials using one of these methods:
+1. Configure AWS credentials using one of these methods:
 
    - Environment variables::
 
@@ -191,7 +187,7 @@ It will avoid uploading the same file twice, or overwriting a potential UUID col
 
 - **Server mode**: Send directly to Ibutsu API endpoint::
 
-    pytest --ibutsu https://ibutsu.example.com
+    pytest --ibutsu https://ibutsu-api.example.com
 
   Note: In server mode, archives are created by default unless ``--ibutsu-no-archive`` is specified.
 

@@ -10,13 +10,6 @@ class ExampleClassForMetadata:
         return "ExampleClassForMetadata"
 
 
-class ExampleClassMeta(type):
-    """Example metaclass used to test serialization of metaclass instances."""
-
-    def __str__(cls) -> str:
-        return "ExampleClassMeta"
-
-
 @pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(items: list[pytest.Item]):
     """This hook is needed only to test legacy behavior.
