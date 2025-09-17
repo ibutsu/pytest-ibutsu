@@ -124,38 +124,22 @@ class TestIbutsuSender:
         assert reader.read() == b"test content"
         reader.close()
 
-    def test_does_run_exist_true(self):
-        """Test does_run_exist when run exists."""
-        sender = IbutsuSender("http://example.com/api")
-        run = IbutsuTestRun(id="test-run-id")
-
-        sender._make_call = Mock(return_value={"id": "test-run-id"})
-
-        assert sender.does_run_exist(run) is True
-        sender._make_call.assert_called_once_with(
-            sender.run_api.get_run, id="test-run-id"
-        )
-
-    def test_does_run_exist_false(self):
-        """Test does_run_exist when run doesn't exist."""
-        sender = IbutsuSender("http://example.com/api")
-        run = IbutsuTestRun(id="test-run-id")
-
-        sender._make_call = Mock(return_value=None)
-
-        assert sender.does_run_exist(run) is False
-
     def test_add_or_update_run_existing(self):
         """Test add_or_update_run when run exists."""
         sender = IbutsuSender("http://example.com/api")
         run = IbutsuTestRun(id="test-run-id")
 
-        sender.does_run_exist = Mock(return_value=True)
-        sender._make_call = Mock()
+        # Mock _make_call to return a truthy value for get_run (run exists) and None for update_run
+        sender._make_call = Mock(side_effect=[{"id": "test-run-id"}, None])
 
         sender.add_or_update_run(run)
 
-        sender._make_call.assert_called_once_with(
+        # Should be called twice: once to check if run exists, once to update
+        assert sender._make_call.call_count == 2
+        sender._make_call.assert_any_call(
+            sender.run_api.get_run, hide_exception=True, id=run.id
+        )
+        sender._make_call.assert_any_call(
             sender.run_api.update_run, id=run.id, run=run.to_dict()
         )
 
@@ -164,14 +148,17 @@ class TestIbutsuSender:
         sender = IbutsuSender("http://example.com/api")
         run = IbutsuTestRun(id="test-run-id")
 
-        sender.does_run_exist = Mock(return_value=False)
-        sender._make_call = Mock()
+        # Mock _make_call to return None for get_run (run doesn't exist) and None for add_run
+        sender._make_call = Mock(side_effect=[None, None])
 
         sender.add_or_update_run(run)
 
-        sender._make_call.assert_called_once_with(
-            sender.run_api.add_run, run=run.to_dict()
+        # Should be called twice: once to check if run exists, once to add
+        assert sender._make_call.call_count == 2
+        sender._make_call.assert_any_call(
+            sender.run_api.get_run, hide_exception=True, id=run.id
         )
+        sender._make_call.assert_any_call(sender.run_api.add_run, run=run.to_dict())
 
     def test_add_result(self):
         """Test add_result method."""
@@ -288,6 +275,13 @@ class TestSendDataToIbutsu:
             "test1": IbutsuTestResult(test_id="test1"),
             "test2": IbutsuTestResult(test_id="test2"),
         }
+        # Initialize summary_info as a proper dict to support item assignment
+        mock_plugin.summary_info = {
+            "server_uploaded": False,
+            "server_url": None,
+            "frontend_url": None,
+            "errors": [],
+        }
 
         send_data_to_ibutsu(mock_plugin)
 
@@ -319,14 +313,20 @@ class TestSendDataToIbutsu:
         mock_plugin = Mock()
         mock_plugin.run = IbutsuTestRun(id="test-run-123")
         mock_plugin.results = {}
+        # Initialize summary_info as a proper dict to support item assignment
+        mock_plugin.summary_info = {
+            "server_uploaded": False,
+            "server_url": None,
+            "frontend_url": None,
+            "errors": [],
+        }
 
         with patch.object(IbutsuSender, "from_ibutsu_plugin", return_value=sender):
             send_data_to_ibutsu(mock_plugin)
 
-        assert (
-            "Results can be viewed on: http://frontend.example.com/runs/test-run-123"
-            in caplog.text
-        )
+        # Verify that the frontend URL was stored in summary_info
+        assert mock_plugin.summary_info["frontend_url"] == "http://frontend.example.com"
+        assert mock_plugin.summary_info["server_uploaded"] is True
 
     def test_send_data_with_server_error(self, caplog):
         """Test data sending with server error doesn't log URL."""
@@ -345,6 +345,13 @@ class TestSendDataToIbutsu:
         mock_plugin = Mock()
         mock_plugin.run = IbutsuTestRun(id="test-run")
         mock_plugin.results = {}
+        # Initialize summary_info as a proper dict to support item assignment
+        mock_plugin.summary_info = {
+            "server_uploaded": False,
+            "server_url": None,
+            "frontend_url": None,
+            "errors": [],
+        }
 
         with patch.object(IbutsuSender, "from_ibutsu_plugin", return_value=sender):
             send_data_to_ibutsu(mock_plugin)

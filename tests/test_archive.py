@@ -485,19 +485,26 @@ class TestIbutsuArchiverExtended:
 class TestDumpToArchive:
     """Test the dump_to_archive function."""
 
-    def test_dump_to_archive_integration(self, tmp_path, caplog):
+    @pytest.mark.parametrize(
+        "mock_archive_plugin_config",
+        [
+            {
+                "run_id": "test-run",
+                "results": {
+                    "result1": IbutsuTestResult(test_id="test1"),
+                    "result2": IbutsuTestResult(test_id="test2"),
+                },
+            }
+        ],
+        indirect=True,
+    )
+    def test_dump_to_archive_integration(self, tmp_path, caplog, mock_archive_plugin):
         """Test dump_to_archive function with mock plugin."""
         import logging
-        from unittest.mock import Mock
 
         caplog.set_level(logging.INFO)
 
-        mock_plugin = Mock()
-        mock_plugin.run = IbutsuTestRun(id="test-run")
-        mock_plugin.results = {
-            "result1": IbutsuTestResult(test_id="test1"),
-            "result2": IbutsuTestResult(test_id="test2"),
-        }
+        mock_plugin = mock_archive_plugin
 
         original_cwd = Path.cwd()
         try:
@@ -512,9 +519,12 @@ class TestDumpToArchive:
             archive_path = tmp_path / f"{mock_plugin.run.id}.tar.gz"
             assert archive_path.exists()
 
-            # Verify log message was captured
-            assert "Saved results archive" in caplog.text
-            assert mock_plugin.run.id in caplog.text
+            # Verify summary_info was updated correctly
+            assert mock_plugin.summary_info["archive_created"] is True
+            assert (
+                mock_plugin.summary_info["archive_path"]
+                == f"{mock_plugin.run.id}.tar.gz"
+            )
 
         finally:
             os.chdir(original_cwd)
