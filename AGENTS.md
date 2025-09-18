@@ -8,3 +8,4 @@
 - Find the CI plan in the .github/workflows folder.
 - From the package root you can just call `hatch test` or `pytest -x`. The commit should pass all tests before proceeding
 - Add or update tests for the code you change, even if nobody asked.
+- Do not loop in tests, use pytest parametrization
