@@ -17,7 +17,7 @@ dependencies = [
   "attrs",
   "boto3",
   "cattrs",
-  "ibutsu-client>=2.1,<3",
+  "ibutsu-client>3",
   "pytest",
 ]
 description = "A plugin to sent pytest results to an Ibutsu server"

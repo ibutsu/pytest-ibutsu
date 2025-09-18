@@ -10,7 +10,9 @@ migrated from test_utils.py to enable parametrization and broader application.
 """
 
 import pytest
+import uuid
 from pathlib import Path
+from datetime import datetime, UTC
 from unittest.mock import Mock
 
 from pytest_ibutsu.s3_uploader import S3Uploader
@@ -448,3 +450,167 @@ def mock_stash_config(mock_stash_config_options):
 
     config.stash.__getitem__ = mock_stash_getitem
     return config
+
+
+# Common test data fixtures to reduce duplication
+
+
+@pytest.fixture
+def valid_result_enum_values():
+    """Provide valid result enum values for testing."""
+    return [
+        "passed",
+        "failed",
+        "error",
+        "skipped",
+        "xpassed",
+        "xfailed",
+        "manual",
+        "blocked",
+    ]
+
+
+@pytest.fixture
+def invalid_result_enum_values():
+    """Provide invalid result enum values for testing."""
+    return [
+        "unknown",
+        "pending",
+        "running",
+        "cancelled",
+        "timeout",
+        "abort",
+        "",
+        123,
+        [],
+        "PASSED",  # Case sensitivity test
+        "Failed",  # Case sensitivity test
+        "XFAILED",  # Case sensitivity test
+    ]
+
+
+@pytest.fixture
+def sample_uuids():
+    """Provide sample UUIDs for testing."""
+    return {
+        "result_id": uuid.uuid4(),
+        "run_id": uuid.uuid4(),
+        "project_id": uuid.uuid4(),
+    }
+
+
+@pytest.fixture
+def invalid_uuid_strings():
+    """Provide invalid UUID strings for testing."""
+    return [
+        "not-a-uuid",
+        "12345678-1234-1234-1234",  # Too short
+        "12345678-1234-1234-1234-12345678901234",  # Too long
+        "",
+        "random-string",
+        123,  # Not a string
+        [],  # Not a string
+        None,  # None should be allowed in some contexts but invalid in others
+    ]
+
+
+@pytest.fixture
+def valid_result_data(sample_uuids):
+    """Provide valid test result data for ClientResult creation."""
+    return {
+        "test_id": "test_function_123",
+        "result": "passed",
+        "component": "auth",
+        "env": "production",
+        "source": "pytest-ibutsu",
+        "id": sample_uuids["result_id"],
+        "run_id": sample_uuids["run_id"],
+        "project_id": sample_uuids["project_id"],
+        "start_time": datetime.now(UTC).isoformat(),
+        "duration": 2.5,
+        "metadata": {"key": "value"},
+        "params": {"param": "value"},
+    }
+
+
+@pytest.fixture
+def valid_run_data(sample_uuids):
+    """Provide valid test run data for ClientRun creation."""
+    return {
+        "component": "authentication",
+        "env": "staging",
+        "source": "pytest-ibutsu",
+        "id": sample_uuids["run_id"],
+        "project_id": sample_uuids["project_id"],
+        "start_time": datetime.now(UTC).isoformat(),
+        "duration": 120.5,
+        "metadata": {"build": "123", "branch": "main"},
+    }
+
+
+@pytest.fixture
+def boundary_test_values():
+    """Provide boundary values for numeric field testing."""
+    return [
+        # Duration boundary values - positive
+        {"duration": 0.0},
+        {"duration": 0.001},  # Very small positive
+        {"duration": 999999.999},  # Very large
+        # Duration boundary values - negative and special
+        {"duration": -0.001},  # Very small negative
+        {"duration": -999999.999},  # Very large negative
+        {"duration": float("nan")},  # NaN
+        {"duration": float("inf")},  # Infinity
+        {"duration": float("-inf")},  # -Infinity
+        # Metadata with boundary values - positive
+        {"metadata": {"count": 0}},
+        {"metadata": {"count": 2**31 - 1}},  # Max 32-bit int
+        {"metadata": {"ratio": 0.0}},
+        {"metadata": {"ratio": 1.0}},
+        # Metadata with boundary values - negative and special
+        {"metadata": {"count": -1}},  # Negative count
+        {"metadata": {"count": -(2**31)}},  # Min 32-bit int
+        {"metadata": {"ratio": -1.0}},  # Negative ratio
+        {"metadata": {"ratio": float("nan")}},  # NaN ratio
+        {"metadata": {"ratio": float("inf")}},  # Infinity ratio
+        {"metadata": {"ratio": float("-inf")}},  # -Infinity ratio
+    ]
+
+
+@pytest.fixture
+def comprehensive_result_metadata():
+    """Provide comprehensive metadata structure for testing."""
+    return {
+        "exception_name": "AssertionError",
+        "short_tb": "AssertionError: Values don't match",
+        "markers": [{"name": "database", "args": [], "kwargs": {}}],
+        "durations": {"setup": 0.1, "call": 10.0, "teardown": 0.4},
+        "statuses": {"setup": ("passed", False), "call": ("failed", False)},
+        "classification": "test_failure",
+        "user_properties": [("custom_prop", "custom_value")],
+        "fspath": "tests/test_example.py",
+        "node_id": "tests/test_example.py::test_function[param1]",
+    }
+
+
+@pytest.fixture
+def comprehensive_run_metadata():
+    """Provide comprehensive run metadata structure for testing."""
+    return {
+        "jenkins": {
+            "job_name": "nightly-tests",
+            "build_number": "456",
+            "build_url": "http://jenkins.example.com/job/nightly-tests/456",
+        },
+        "git": {
+            "commit": "def456abc",
+            "branch": "release/v2.0",
+            "author": "developer@example.com",
+        },
+        "environment": {
+            "database_version": "13.4",
+            "api_version": "2.1.0",
+            "frontend_version": "1.5.2",
+        },
+        "test_counts": {"total": 45, "passed": 42, "failed": 2, "skipped": 1},
+    }
