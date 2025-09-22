@@ -19,6 +19,7 @@ dependencies = [
   "cattrs",
   "ibutsu-client>3",
   "pytest",
+  "s3",
 ]
 description = "A plugin to sent pytest results to an Ibutsu server"
 dynamic = ["version"]
