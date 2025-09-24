@@ -216,8 +216,10 @@ class IbutsuTestResult:
         try:
             params = item.callspec.params.items()  # type: ignore[attr-defined]
             return {p: get_name(v) for p, v in params}
+        except AttributeError:
+            return {}
         except Exception as e:
-            log.warning("%s %s", item, e)
+            log.debug("%s %s", item, e)
             return {}
 
     @staticmethod
