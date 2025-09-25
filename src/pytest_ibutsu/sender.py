@@ -3,11 +3,11 @@ from __future__ import annotations
 import logging
 import os
 import time
+from functools import cached_property
 from http.client import BadStatusLine
 from http.client import RemoteDisconnected
-from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, cast, BinaryIO
+from typing import TYPE_CHECKING, Callable, cast, Any
 from typing import TypeVar, ParamSpec
 
 from ibutsu_client.api_client import ApiClient
@@ -51,6 +51,157 @@ class TooManyRetriesError(Exception):
     pass
 
 
+class ArtifactDataHandler:
+    """Simplified handler for artifact data that reduces branching and complexity."""
+
+    def __init__(self, data: Any, upload_limit: int = UPLOAD_LIMIT) -> None:
+        self.original_data = data
+        self.upload_limit = upload_limit
+
+    @cached_property
+    def size(self) -> int:
+        """Get the size of the data, cached for performance."""
+        try:
+            return self._calculate_size()
+        except (PermissionError, OSError) as e:
+            # Re-raise PermissionError for proper handling upstream
+            if isinstance(e, PermissionError):
+                raise
+            # For other OSError, treat as string content
+            text = str(self.original_data) if self.original_data is not None else "None"
+            return len(text.encode("utf-8"))
+
+    def _calculate_size(self) -> int:
+        """Calculate size using simplified logic."""
+        # Handle None first
+        if self.original_data is None:
+            return 4  # len("None")
+
+        # Handle bytes
+        if isinstance(self.original_data, bytes):
+            return len(self.original_data)
+
+        # Handle file-like objects (has read method)
+        if hasattr(self.original_data, "read"):
+            return self._get_file_like_size()
+
+        # Handle strings that might be file paths
+        if isinstance(self.original_data, str):
+            # Don't treat URLs as file paths
+            if self.original_data.startswith(("http://", "https://")):
+                return len(self.original_data.encode("utf-8"))
+
+            # Try to treat as file path
+            try:
+                path = Path(self.original_data)
+                if path.is_file():
+                    return path.stat().st_size
+            except PermissionError:
+                # Re-raise PermissionError so it can be handled upstream
+                raise
+            except (TypeError, OSError):
+                # Handle other file system errors
+                pass
+
+            # Fall back to string length
+            return len(self.original_data.encode("utf-8"))
+
+        # Handle all other types as strings
+        text = str(self.original_data)
+        return len(text.encode("utf-8"))
+
+    def _get_file_like_size(self) -> int:
+        """Get size of file-like object, trying to avoid reading the whole file."""
+        if hasattr(self.original_data, "seek") and hasattr(self.original_data, "tell"):
+            # Save current position
+            current_pos = self.original_data.tell()
+            # Seek to end to get size
+            self.original_data.seek(0, 2)  # SEEK_END
+            size = cast(int, self.original_data.tell())
+            # Restore original position
+            self.original_data.seek(current_pos)
+            return size
+        else:
+            # If we can't seek, we'll have to read the content
+            content = self.original_data.read()
+            # Reset position if possible
+            if hasattr(self.original_data, "seek"):
+                self.original_data.seek(0)
+            return (
+                len(content) if isinstance(content, (bytes, str)) else len(str(content))
+            )
+
+    def is_size_acceptable(self) -> bool:
+        """Check if the data size is within upload limits."""
+        try:
+            return self.size < self.upload_limit
+        except PermissionError:
+            # Permission errors should be handled by caller
+            raise
+        except (OSError, TypeError):
+            # If we can't determine size, reject to be safe
+            return False
+
+    @cached_property
+    def prepared_data(self) -> bytes | str:
+        """Get the data prepared for API upload, cached for performance."""
+        try:
+            return self._prepare_content()
+        except OSError as e:
+            logger.error(f"Failed to read data: {e}")
+            # Fall back to string representation
+            return str(self.original_data) if self.original_data is not None else "None"
+
+    def _prepare_content(self) -> bytes | str:
+        """Prepare content using simplified logic."""
+        # Handle None first
+        if self.original_data is None:
+            return "None"
+
+        # Handle bytes - keep as bytes for binary uploads
+        if isinstance(self.original_data, bytes):
+            return self.original_data
+
+        # Handle file-like objects
+        if hasattr(self.original_data, "read"):
+            return self._read_file_like_content()
+
+        # Handle strings that might be file paths
+        if isinstance(self.original_data, str):
+            # Don't treat URLs as file paths
+            if self.original_data.startswith(("http://", "https://")):
+                return self.original_data
+
+            # Try to treat as file path and read as binary
+            try:
+                path = Path(self.original_data)
+                if path.is_file():
+                    return path.read_bytes()
+            except (TypeError, PermissionError, OSError):
+                # For PermissionError or other issues, treat as string
+                pass
+
+            # Fall back to string content
+            return self.original_data
+
+        # Handle all other types as strings
+        return str(self.original_data)
+
+    def _read_file_like_content(self) -> bytes:
+        """Read content from file-like objects."""
+        try:
+            content = self.original_data.read()
+            if isinstance(content, bytes):
+                return content
+            elif isinstance(content, str):
+                return content.encode("utf-8")
+            else:
+                return str(content).encode("utf-8")
+        except OSError as e:
+            logger.error(f"Failed to read from file-like object: {e}")
+            return str(self.original_data).encode("utf-8")
+
+
 R = TypeVar("R")
 P = ParamSpec("P")
 
@@ -60,17 +211,17 @@ class IbutsuSender:
         self.server_url = server_url
         self._has_server_error = False
         self._server_error_tbs: list[str] = []
-        self._sender_cache = []  # type: ignore
-        config = Configuration(access_token=token, host=server_url)  # type: ignore[no-untyped-call]
+        self._sender_cache: list[Any] = []
+        config = Configuration(access_token=token, host=server_url)
         # Only set the SSL CA cert if one of the environment variables is set
         for env_var in CA_BUNDLE_ENVS:
             if os.getenv(env_var, None):
                 config.ssl_ca_cert = os.getenv(env_var)
-        api_client = ApiClient(config)  # type: ignore[no-untyped-call]
-        self.result_api = ResultApi(api_client)  # type: ignore[no-untyped-call]
-        self.artifact_api = ArtifactApi(api_client)  # type: ignore[no-untyped-call]
-        self.run_api = RunApi(api_client)  # type: ignore[no-untyped-call]
-        self.health_api = HealthApi(api_client)  # type: ignore[no-untyped-call]
+        api_client = ApiClient(config)
+        self.result_api = ResultApi(api_client)
+        self.artifact_api = ArtifactApi(api_client)
+        self.run_api = RunApi(api_client)
+        self.health_api = HealthApi(api_client)
 
     @classmethod
     def from_ibutsu_plugin(cls, ibutsu: IbutsuPlugin) -> IbutsuSender:
@@ -84,16 +235,16 @@ class IbutsuSender:
 
     @property
     def frontend_url(self) -> str:
-        return cast(str, self.health_api.get_health_info().frontend)  # type: ignore[no-untyped-call]
+        return cast(str, self.health_api.get_health_info().frontend)
 
     def _make_call(
         self,
-        api_method: Callable[P, R],
-        *args: P.args,
-        **kwargs: P.kwargs,
+        api_method: Callable[..., R],
+        *args: Any,
+        hide_exception: bool = False,
+        **kwargs: Any,
     ) -> R | None:
-        # Extract hide_exception from kwargs if present
-        hide_exception = kwargs.pop("hide_exception", False)
+        # hide_exception is now a direct parameter
 
         # Log method name and id once at the beginning
         method_name = getattr(api_method, "__name__", str(api_method))
@@ -157,79 +308,6 @@ class IbutsuSender:
         else:
             self._make_call(self.run_api.add_run, run=run.to_dict())
 
-    def _prepare_stream(self, data: bytes | str | None) -> tuple[BinaryIO, int]:
-        """
-        Returns a file-like object and its size:
-        - bytes → BytesIO
-        - existing file path → open file
-        - anything else → UTF-8-encoded BytesIO
-        """
-        if isinstance(data, bytes):
-            buf: BinaryIO = BytesIO(data)
-        else:
-            # Handle string, None, or other types by converting to string
-            if isinstance(data, str):
-                text = data
-            else:
-                text = str(data) if data is not None else "None"
-
-            try:
-                # Skip URL-like strings
-                if text.startswith(("http://", "https://")):
-                    buf = BytesIO(text.encode("utf-8"))
-                else:
-                    path = Path(text)
-                    buf = (
-                        path.open("rb")
-                        if path.is_file()
-                        else BytesIO(text.encode("utf-8"))
-                    )
-            except (TypeError, OSError):
-                buf = BytesIO(str(text).encode("utf-8"))
-
-        # compute size
-        pos = buf.tell()
-        buf.seek(0, os.SEEK_END)
-        size = buf.tell()
-        buf.seek(pos)
-        return buf, size
-
-    def _check_size_before_upload(self, data: bytes | str | None) -> int | None:
-        """
-        Check file size before creating stream for performance.
-        Returns size if acceptable, None if over limit.
-        """
-        if isinstance(data, bytes):
-            return len(data) if len(data) < UPLOAD_LIMIT else None
-
-        # Handle None or other non-string types by converting to string
-        if not isinstance(data, str):
-            data = str(data) if data is not None else "None"
-
-        # For string data
-        # For URLs, treat as string content
-        if data.startswith(("http://", "https://")):
-            encoded_size = len(data.encode("utf-8"))
-            return encoded_size if encoded_size < UPLOAD_LIMIT else None
-
-        # For potential file paths, check size before opening
-        try:
-            path = Path(data)
-            if path.is_file():
-                file_size = path.stat().st_size
-                return file_size if file_size < UPLOAD_LIMIT else None
-            else:
-                # Not a file, treat as string content
-                encoded_size = len(data.encode("utf-8"))
-                return encoded_size if encoded_size < UPLOAD_LIMIT else None
-        except PermissionError:
-            # Re-raise PermissionError so it gets caught in _upload_artifact
-            raise
-        except (TypeError, OSError):
-            # If any other error, treat as string content
-            encoded_size = len(data.encode("utf-8"))
-            return encoded_size if encoded_size < UPLOAD_LIMIT else None
-
     def upload_artifacts(self, r: IbutsuTestResult | IbutsuTestRun) -> None:
         for filename, data in r._artifacts.items():
             try:
@@ -248,21 +326,24 @@ class IbutsuSender:
         self, id_: str, filename: str, data: bytes | str | None, is_run: bool = False
     ) -> None:
         kwargs = {"run_id" if is_run else "result_id": id_}
-        stream = None
         try:
             logger.debug(f"Uploading artifact {filename} for {id_}")
 
-            # Check size before creating stream for better performance
-            size_check = self._check_size_before_upload(data)
-            if size_check is None:
+            # Use unified data handler for simplified processing
+            handler = ArtifactDataHandler(data)
+
+            # Check size using the unified handler
+            if not handler.is_size_acceptable():
                 logger.error("Artifact size is greater than upload limit")
                 return
 
-            stream, size = self._prepare_stream(data)
+            # Get prepared data using the unified handler
+            processed_data = handler.prepared_data
+
             self._make_call(
                 self.artifact_api.upload_artifact,
                 filename,
-                stream,
+                processed_data,
                 hide_exception=False,
                 **kwargs,
             )
@@ -285,14 +366,6 @@ class IbutsuSender:
             logger.error(
                 f"Uploading artifact '{filename}' failed as the file closed prematurely."
             )
-        finally:
-            # Always close file streams to prevent resource leaks
-            # BytesIO streams don't need explicit closing but it's safe to do so
-            if stream is not None:
-                try:
-                    stream.close()
-                except Exception:
-                    pass
 
 
 def send_data_to_ibutsu(ibutsu_plugin: IbutsuPlugin) -> None:
