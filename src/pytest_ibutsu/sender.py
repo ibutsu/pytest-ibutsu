@@ -5,9 +5,8 @@ import os
 import time
 from http.client import BadStatusLine
 from http.client import RemoteDisconnected
-from io import BufferedReader
-from io import BytesIO
-from typing import TYPE_CHECKING, Callable, cast, BinaryIO
+from pathlib import Path
+from typing import TYPE_CHECKING, Callable, cast
 from typing import TypeVar, ParamSpec
 
 from ibutsu_client.api_client import ApiClient
@@ -151,15 +150,6 @@ class IbutsuSender:
 
         return None
 
-    @staticmethod
-    def _get_buffered_reader(data: bytes | str, filename: str) -> tuple[BinaryIO, int]:
-        if isinstance(data, bytes):
-            io_bytes = BytesIO(data)
-            io_bytes.name = filename
-            payload = BufferedReader(io_bytes)
-            return payload, len(data)
-        return open(data, "rb"), os.stat(data).st_size
-
     def add_or_update_run(self, run: IbutsuTestRun) -> None:
         if bool(self._make_call(self.run_api.get_run, hide_exception=True, id=run.id)):
             self._make_call(self.run_api.update_run, id=run.id, run=run.to_dict())
@@ -183,33 +173,62 @@ class IbutsuSender:
     def _upload_artifact(
         self, id_: str, filename: str, data: bytes | str, is_run: bool = False
     ) -> None:
-        kwargs: dict[str, str | bool] = {"_check_return_type": False}
+        kwargs: dict[str, str] = {}
         if is_run:
             kwargs["run_id"] = id_
         else:
             kwargs["result_id"] = id_
-        buffered_reader = None
+
         try:
             logger.debug(f"Uploading artifact {filename} for {id_}")
-            buffered_reader, payload_size = self._get_buffered_reader(data, filename)
-            if payload_size >= UPLOAD_LIMIT:
-                logger.error("Artifact size is greater than upload limit")
-                return
-            else:
-                self._make_call(
-                    self.artifact_api.upload_artifact,
-                    filename,
-                    buffered_reader,
-                    hide_exception=False,
-                    **kwargs,
-                )
+
+            # Handle file path strings by reading the file content
+            if (
+                isinstance(data, str)
+                and len(data) > 0
+                and not data.startswith(("http://", "https://"))
+            ):
+                try:
+                    # Check if it's a file path
+                    file_path = Path(data)
+                    if file_path.exists() and file_path.is_file():
+                        file_size = file_path.stat().st_size
+                        if file_size >= UPLOAD_LIMIT:
+                            logger.error("Artifact size is greater than upload limit")
+                            return
+                        # Read file content as bytes
+                        data = file_path.read_bytes()
+                    # If not a file path, treat as string content
+                except OSError:
+                    # If file operations fail, treat data as string content
+                    pass
+
+            # Check size for bytes data
+            if isinstance(data, bytes):
+                if len(data) >= UPLOAD_LIMIT:
+                    logger.error("Artifact size is greater than upload limit")
+                    return
+
+            # Pass data directly to the API (no BufferedReader wrapper needed)
+            self._make_call(
+                self.artifact_api.upload_artifact,
+                filename,
+                data,
+                hide_exception=False,
+                **kwargs,
+            )
         except ApiValueError:
             logger.error(
                 f"Uploading artifact '{filename}' failed as the file closed prematurely."
             )
-        finally:
-            if buffered_reader:
-                buffered_reader.close()
+        except FileNotFoundError:
+            # data should be a file path string in this context, but handle bytes safely
+            data_repr = (
+                data.decode("utf-8", errors="replace")
+                if isinstance(data, bytes)
+                else data
+            )
+            logger.error(f"Artifact file '{data_repr}' not found, skipping upload.")
 
 
 def send_data_to_ibutsu(ibutsu_plugin: IbutsuPlugin) -> None:
