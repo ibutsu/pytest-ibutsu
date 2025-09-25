@@ -219,7 +219,12 @@ class IbutsuPlugin:
         if ibutsu_no_archive_cli is not None:
             ibutsu_no_archive = bool(ibutsu_no_archive_cli)
         elif ibutsu_no_archive_env is not None:
-            ibutsu_no_archive = bool(ibutsu_no_archive_env)
+            ibutsu_no_archive = ibutsu_no_archive_env.lower() in (
+                "true",
+                "1",
+                "yes",
+                "on",
+            )
         elif ibutsu_no_archive_ini is not None:
             ibutsu_no_archive = bool(ibutsu_no_archive_ini)
         else:
