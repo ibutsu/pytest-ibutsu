@@ -28,7 +28,7 @@ repos:
       additional_dependencies:
         - attrs
         - cattrs
-        - ibutsu-client
+        - ibutsu-client>=3
         - pytest
         - types-attrs
 
