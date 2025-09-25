@@ -101,29 +101,6 @@ class TestIbutsuSender:
 
         assert sender.frontend_url == "http://frontend.example.com"
 
-    def test_get_buffered_reader_with_bytes(self):
-        """Test _get_buffered_reader with bytes input."""
-        data = b"test content"
-        filename = "test.txt"
-
-        reader, size = IbutsuSender._get_buffered_reader(data, filename)
-
-        assert size == len(data)
-        assert reader.name == filename
-        assert reader.read() == data
-        reader.close()
-
-    def test_get_buffered_reader_with_file_path(self, tmp_path):
-        """Test _get_buffered_reader with file path."""
-        test_file = tmp_path / "test_content.txt"
-        test_file.write_text("test content")
-
-        reader, size = IbutsuSender._get_buffered_reader(str(test_file), "test.txt")
-
-        assert size == len("test content")
-        assert reader.read() == b"test content"
-        reader.close()
-
     def test_add_or_update_run_existing(self):
         """Test add_or_update_run when run exists."""
         sender = IbutsuSender("http://example.com/api")
@@ -214,8 +191,8 @@ class TestIbutsuSender:
 
         sender._upload_artifact.assert_called_once()
 
-    def test_upload_artifact_under_limit(self):
-        """Test _upload_artifact with file under size limit."""
+    def test_upload_artifact_bytes_under_limit(self):
+        """Test _upload_artifact with bytes data under size limit."""
         sender = IbutsuSender("http://example.com/api")
         sender._make_call = Mock()
 
@@ -223,12 +200,70 @@ class TestIbutsuSender:
         sender._upload_artifact("result-id", "test.txt", content, False)
 
         sender._make_call.assert_called_once()
-        # Verify it's called with artifact API
+        # Verify it's called with artifact API and correct arguments
         args, kwargs = sender._make_call.call_args
         assert args[0] == sender.artifact_api.upload_artifact
+        assert args[1] == "test.txt"  # filename
+        assert args[2] == content  # data passed directly
+        assert kwargs["result_id"] == "result-id"
 
-    def test_upload_artifact_over_limit(self, caplog):
-        """Test _upload_artifact with file over size limit."""
+    def test_upload_artifact_string_content(self):
+        """Test _upload_artifact with string content (not a file path)."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        content = "text content"
+        sender._upload_artifact("result-id", "test.txt", content, False)
+
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert args[0] == sender.artifact_api.upload_artifact
+        assert args[1] == "test.txt"
+        assert args[2] == content  # String passed directly
+        assert kwargs["result_id"] == "result-id"
+
+    def test_upload_artifact_file_path(self, tmp_path):
+        """Test _upload_artifact with file path - should read file content."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        # Create a test file
+        test_file = tmp_path / "test_content.txt"
+        test_content = "file content from disk"
+        test_file.write_text(test_content)
+
+        sender._upload_artifact("result-id", "test.txt", str(test_file), False)
+
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert args[0] == sender.artifact_api.upload_artifact
+        assert args[1] == "test.txt"
+        assert args[2] == test_content.encode()  # Should be read as bytes
+        assert kwargs["result_id"] == "result-id"
+
+    def test_upload_artifact_binary_file_path(self, tmp_path):
+        """Test _upload_artifact with binary file path (simulating image upload)."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        # Create a binary file (simulating an image)
+        test_file = tmp_path / "test_image.png"
+        binary_content = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"  # PNG header
+        )
+        test_file.write_bytes(binary_content)
+
+        sender._upload_artifact("result-id", "test_image.png", str(test_file), False)
+
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert args[0] == sender.artifact_api.upload_artifact
+        assert args[1] == "test_image.png"
+        assert args[2] == binary_content  # Should be read as bytes
+        assert kwargs["result_id"] == "result-id"
+
+    def test_upload_artifact_bytes_over_limit(self, caplog):
+        """Test _upload_artifact with bytes data over size limit."""
         sender = IbutsuSender("http://example.com/api")
         sender._make_call = Mock()
 
@@ -239,6 +274,35 @@ class TestIbutsuSender:
         # Should not call API due to size limit
         sender._make_call.assert_not_called()
         assert "Artifact size is greater than upload limit" in caplog.text
+
+    def test_upload_artifact_file_over_limit(self, tmp_path, caplog):
+        """Test _upload_artifact with file path over size limit."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        # Create a large file
+        test_file = tmp_path / "large_file.txt"
+        large_content = "x" * (UPLOAD_LIMIT + 1)
+        test_file.write_text(large_content)
+
+        sender._upload_artifact("result-id", "large_file.txt", str(test_file), False)
+
+        # Should not call API due to size limit
+        sender._make_call.assert_not_called()
+        assert "Artifact size is greater than upload limit" in caplog.text
+
+    def test_upload_artifact_run_id_parameter(self):
+        """Test _upload_artifact with is_run=True sets run_id parameter."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        content = b"run artifact content"
+        sender._upload_artifact("run-id", "run_artifact.log", content, True)
+
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert kwargs["run_id"] == "run-id"
+        assert "result_id" not in kwargs
 
     def test_upload_artifact_api_value_error(self, caplog):
         """Test _upload_artifact handling ApiValueError."""
@@ -254,6 +318,246 @@ class TestIbutsuSender:
             "Uploading artifact 'test.txt' failed as the file closed prematurely."
             in caplog.text
         )
+
+    def test_upload_artifact_file_not_found(self, caplog):
+        """Test _upload_artifact handling file not found."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        # Try to upload a non-existent file
+        nonexistent_file = "/path/that/does/not/exist.txt"
+        sender._upload_artifact("result-id", "missing.txt", nonexistent_file, False)
+
+        # Should still call the API with the string data (fallback behavior)
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert (
+            args[2] == nonexistent_file
+        )  # String passed as-is when file doesn't exist
+
+    def test_upload_artifact_url_string_not_treated_as_file(self):
+        """Test that URL strings are not treated as file paths."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        url_content = "http://example.com/some/resource"
+        sender._upload_artifact("result-id", "url.txt", url_content, False)
+
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert args[2] == url_content  # URL string passed directly
+
+    def test_upload_artifact_https_string_not_treated_as_file(self):
+        """Test that HTTPS URL strings are not treated as file paths."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        url_content = "https://example.com/some/resource"
+        sender._upload_artifact("result-id", "url.txt", url_content, False)
+
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert args[2] == url_content  # HTTPS URL string passed directly
+
+
+class TestArtifactUploadIntegration:
+    """Integration tests for artifact uploads simulating real iqe-core usage."""
+
+    def test_text_log_upload_like_iqe_core(self, tmp_path):
+        """Test text log upload like iqe-core does with iqe.log."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        # Simulate iqe-core creating a log entry and attaching it as bytes
+        log_content = "2025-09-24 22:32:27 INFO Starting test execution\n2025-09-24 22:32:28 DEBUG Test step 1\n2025-09-24 22:32:29 ERROR Test failed"
+        log_bytes = log_content.encode("utf-8")
+
+        # Create a test result and attach the log as iqe-core would
+        result = IbutsuTestResult(test_id="test_log_upload")
+        result.attach_artifact("iqe.log", log_bytes)
+
+        # Upload the artifacts
+        sender.upload_artifacts(result)
+
+        # Verify the upload was called correctly
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert args[0] == sender.artifact_api.upload_artifact
+        assert args[1] == "iqe.log"
+        assert args[2] == log_bytes  # Should be the exact bytes
+        assert kwargs["result_id"] == result.id
+
+    def test_network_log_upload_like_iqe_core(self):
+        """Test network log upload like iqe-core does with net.log."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        # Simulate iqe-core creating network log and attaching it as bytes
+        net_log_content = (
+            "1672531947.123 - 150 - 200 - GET - https://example.com/api/users - etag123 - req-id-456\n"
+            "1672531947.456 - 75 - 200 - POST - https://example.com/api/login - etag789 - req-id-789\n"
+        )
+        net_log_bytes = net_log_content.encode("utf-8")
+
+        result = IbutsuTestResult(test_id="test_net_log_upload")
+        result.attach_artifact("net.log", net_log_bytes)
+
+        sender.upload_artifacts(result)
+
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert args[1] == "net.log"
+        assert args[2] == net_log_bytes
+
+    def test_browser_log_upload_like_iqe_core(self):
+        """Test browser log upload like iqe-core does with browser.log."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        # Simulate iqe-core creating browser log and attaching it as bytes
+        browser_log_content = (
+            "[INFO] (2025-09-24T22:32:27.123Z): Page loaded successfully\n"
+            "[ERROR] (2025-09-24T22:32:28.456Z): JavaScript error: Uncaught TypeError\n"
+        )
+        browser_log_bytes = browser_log_content.encode("utf-8")
+
+        result = IbutsuTestResult(test_id="test_browser_log_upload")
+        result.attach_artifact("browser.log", browser_log_bytes)
+
+        sender.upload_artifacts(result)
+
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert args[1] == "browser.log"
+        assert args[2] == browser_log_bytes
+
+    def test_screenshot_upload_like_iqe_core(self):
+        """Test screenshot upload like iqe-core does with screenshot.png."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        # Simulate iqe-core taking a screenshot and attaching it as bytes
+        # This simulates selenium.get_screenshot_as_png() output
+        mock_png_data = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x10\x00\x00\x00\x10"
+            b"\x08\x02\x00\x00\x00\x90\x91h6\x00\x00\x00\x19tEXtSoftware\x00Adobe"
+            b"\x00ImageReadyq\xc9e<\x00\x00\x00\x0eIDATx\xdab\x00\x02\x00\x00\x05"
+            b"\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+
+        result = IbutsuTestResult(test_id="test_screenshot_upload")
+        result.attach_artifact("screenshot.png", mock_png_data)
+
+        sender.upload_artifacts(result)
+
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert args[1] == "screenshot.png"
+        assert args[2] == mock_png_data  # Should be the exact binary data
+
+    def test_navigation_gif_upload_like_iqe_core(self):
+        """Test navigation GIF upload like iqe-core does with nav.gif."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        # Simulate iqe-core creating a navigation GIF and reading it from file
+        # This simulates nav_gif.read_bytes() output
+        mock_gif_data = (
+            b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04"
+            b"\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02"
+            b"\x04\x01\x00;"
+        )
+
+        result = IbutsuTestResult(test_id="test_nav_gif_upload")
+        result.attach_artifact("nav.gif", mock_gif_data)
+
+        sender.upload_artifacts(result)
+
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert args[1] == "nav.gif"
+        assert args[2] == mock_gif_data  # Should be the exact binary data
+
+    def test_traceback_log_upload_like_iqe_core(self):
+        """Test traceback log upload like iqe-core does with traceback.log."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        # Simulate iqe-core creating a traceback log from exception
+        traceback_content = (
+            "Traceback (most recent call last):\n"
+            '  File "/tests/test_example.py", line 42, in test_function\n'
+            "    assert response.status_code == 200\n"
+            "AssertionError: Expected 200 but got 404\n"
+        )
+        traceback_bytes = traceback_content.encode("utf-8")
+
+        result = IbutsuTestResult(test_id="test_traceback_upload")
+        result.attach_artifact("traceback.log", traceback_bytes)
+
+        sender.upload_artifacts(result)
+
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert args[1] == "traceback.log"
+        assert args[2] == traceback_bytes
+
+    def test_multiple_artifacts_upload_like_iqe_core(self):
+        """Test multiple artifacts upload like iqe-core does in a single test."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        # Simulate iqe-core attaching multiple artifacts to one test result
+        result = IbutsuTestResult(test_id="test_multiple_artifacts")
+
+        # Text artifacts
+        log_content = "Test execution log content"
+        result.attach_artifact("iqe.log", log_content.encode("utf-8"))
+
+        # Binary artifacts
+        screenshot_data = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR..."
+        result.attach_artifact("screenshot.png", screenshot_data)
+
+        # Network log
+        net_log = "Network requests log"
+        result.attach_artifact("net.log", net_log.encode("utf-8"))
+
+        sender.upload_artifacts(result)
+
+        # Should be called once for each artifact
+        assert sender._make_call.call_count == 3
+
+        # Check that all artifacts were uploaded with correct data
+        calls = sender._make_call.call_args_list
+        uploaded_files = {call[0][1]: call[0][2] for call in calls}
+
+        assert "iqe.log" in uploaded_files
+        assert "screenshot.png" in uploaded_files
+        assert "net.log" in uploaded_files
+        assert uploaded_files["iqe.log"] == log_content.encode("utf-8")
+        assert uploaded_files["screenshot.png"] == screenshot_data
+        assert uploaded_files["net.log"] == net_log.encode("utf-8")
+
+    def test_run_artifact_upload_like_iqe_core(self):
+        """Test run-level artifact upload like iqe-core does."""
+        sender = IbutsuSender("http://example.com/api")
+        sender._make_call = Mock()
+
+        # Simulate iqe-core attaching run-level artifacts
+        run = IbutsuTestRun(id="test-run")
+
+        # Run-level log file
+        run_log_content = "Run-level configuration and setup logs"
+        run.attach_artifact("run_setup.log", run_log_content.encode("utf-8"))
+
+        sender.upload_artifacts(run)
+
+        sender._make_call.assert_called_once()
+        args, kwargs = sender._make_call.call_args
+        assert args[1] == "run_setup.log"
+        assert args[2] == run_log_content.encode("utf-8")
+        assert kwargs["run_id"] == run.id
+        assert "result_id" not in kwargs
 
 
 class TestSendDataToIbutsu:
