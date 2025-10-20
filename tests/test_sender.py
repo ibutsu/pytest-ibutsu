@@ -27,9 +27,7 @@ def _create_data_capturing_sender():
 
     def capture_data(*args, **kwargs):
         nonlocal captured_data_content
-        if len(args) >= 3:
-            data = args[2]
-            captured_data_content = data
+        captured_data_content = kwargs.get("file", captured_data_content)
 
     sender._make_call = Mock(side_effect=capture_data)
     sender._captured_data_content = lambda: captured_data_content
@@ -42,12 +40,9 @@ def _create_multi_data_capturing_sender():
     captured_calls = []
 
     def capture_data(*args, **kwargs):
-        if len(args) >= 3:
-            data = args[2]
-            # Store the call with captured content
-            captured_calls.append(
-                {"args": args, "kwargs": kwargs, "data_content": data}
-            )
+        data = kwargs.get("file")
+        # Store the call with captured content
+        captured_calls.append({"args": args, "kwargs": kwargs, "data_content": data})
 
     sender._make_call = Mock(side_effect=capture_data)
     sender._captured_calls = lambda: captured_calls
@@ -236,7 +231,7 @@ class TestIbutsuSender:
         # Verify it's called with artifact API and correct arguments
         args, kwargs = sender._make_call.call_args
         assert args[0] == sender.artifact_api.upload_artifact
-        assert args[1] == "test.txt"  # filename
+        assert kwargs["filename"] == "test.txt"
         # Verify the data content was captured correctly
         assert sender._captured_data_content() == content  # data passed directly
         assert kwargs["result_id"] == "result-id"
@@ -251,7 +246,7 @@ class TestIbutsuSender:
         sender._make_call.assert_called_once()
         args, kwargs = sender._make_call.call_args
         assert args[0] == sender.artifact_api.upload_artifact
-        assert args[1] == "test.txt"
+        assert kwargs["filename"] == "test.txt"
         # Verify the data content was captured correctly - should be passed as string
         assert sender._captured_data_content() == content  # String passed directly
         assert kwargs["result_id"] == "result-id"
@@ -270,7 +265,7 @@ class TestIbutsuSender:
         sender._make_call.assert_called_once()
         args, kwargs = sender._make_call.call_args
         assert args[0] == sender.artifact_api.upload_artifact
-        assert args[1] == "test.txt"
+        assert kwargs["filename"] == "test.txt"
         # Verify the data content was captured correctly - should be file content as bytes
         assert (
             sender._captured_data_content() == test_content.encode()
@@ -293,7 +288,7 @@ class TestIbutsuSender:
         sender._make_call.assert_called_once()
         args, kwargs = sender._make_call.call_args
         assert args[0] == sender.artifact_api.upload_artifact
-        assert args[1] == "test_image.png"
+        assert kwargs["filename"] == "test_image.png"
         # Verify the data content was captured correctly
         assert (
             sender._captured_data_content() == binary_content
@@ -314,7 +309,7 @@ class TestIbutsuSender:
         sender._make_call.assert_called_once()
         args, kwargs = sender._make_call.call_args
         assert args[0] == sender.artifact_api.upload_artifact
-        assert args[1] == "latin1_file.txt"
+        assert kwargs["filename"] == "latin1_file.txt"
         # Verify the data content was captured correctly
         assert sender._captured_data_content() == latin1_content.encode("latin-1")
         assert kwargs["result_id"] == "result-id"
@@ -472,7 +467,7 @@ class TestIbutsuSender:
         sender._make_call.assert_called_once()
         args, kwargs = sender._make_call.call_args
         assert args[0] == sender.artifact_api.upload_artifact
-        assert args[1] == "empty.txt"
+        assert kwargs["filename"] == "empty.txt"
         # Verify the data content was captured correctly - empty string passed as string
         assert sender._captured_data_content() == ""  # Empty string passed directly
 
@@ -486,7 +481,7 @@ class TestIbutsuSender:
         sender._make_call.assert_called_once()
         args, kwargs = sender._make_call.call_args
         assert args[0] == sender.artifact_api.upload_artifact
-        assert args[1] == "none_data.txt"
+        assert kwargs["filename"] == "none_data.txt"
         # None gets converted to "None" string
         assert sender._captured_data_content() == "None"
 
@@ -513,7 +508,7 @@ class TestArtifactUploadIntegration:
         sender._make_call.assert_called_once()
         args, kwargs = sender._make_call.call_args
         assert args[0] == sender.artifact_api.upload_artifact
-        assert args[1] == "iqe.log"
+        assert kwargs["filename"] == "iqe.log"
         # Verify the data content was captured correctly
         assert sender._captured_data_content() == log_bytes  # Should be the exact bytes
         assert kwargs["result_id"] == result.id
@@ -536,7 +531,7 @@ class TestArtifactUploadIntegration:
 
         sender._make_call.assert_called_once()
         args, kwargs = sender._make_call.call_args
-        assert args[1] == "net.log"
+        assert kwargs["filename"] == "net.log"
         # Verify the data content was captured correctly
         assert sender._captured_data_content() == net_log_bytes
 
@@ -558,7 +553,7 @@ class TestArtifactUploadIntegration:
 
         sender._make_call.assert_called_once()
         args, kwargs = sender._make_call.call_args
-        assert args[1] == "browser.log"
+        assert kwargs["filename"] == "browser.log"
         # Verify the data content was captured correctly
         assert sender._captured_data_content() == browser_log_bytes
 
@@ -582,7 +577,7 @@ class TestArtifactUploadIntegration:
 
         sender._make_call.assert_called_once()
         args, kwargs = sender._make_call.call_args
-        assert args[1] == "screenshot.png"
+        assert kwargs["filename"] == "screenshot.png"
         # Verify the data content was captured correctly
         assert (
             sender._captured_data_content() == mock_png_data
@@ -607,7 +602,7 @@ class TestArtifactUploadIntegration:
 
         sender._make_call.assert_called_once()
         args, kwargs = sender._make_call.call_args
-        assert args[1] == "nav.gif"
+        assert kwargs["filename"] == "nav.gif"
         # Verify the data content was captured correctly
         assert (
             sender._captured_data_content() == mock_gif_data
@@ -633,7 +628,7 @@ class TestArtifactUploadIntegration:
 
         sender._make_call.assert_called_once()
         args, kwargs = sender._make_call.call_args
-        assert args[1] == "traceback.log"
+        assert kwargs["filename"] == "traceback.log"
         # Verify the data content was captured correctly
         assert sender._captured_data_content() == traceback_bytes
 
@@ -664,7 +659,7 @@ class TestArtifactUploadIntegration:
         # Check that all artifacts were uploaded with correct data
         captured_calls = sender._captured_calls()
         uploaded_files = {
-            call["args"][1]: call["data_content"] for call in captured_calls
+            call["kwargs"]["filename"]: call["data_content"] for call in captured_calls
         }
 
         assert "iqe.log" in uploaded_files
@@ -689,7 +684,7 @@ class TestArtifactUploadIntegration:
 
         sender._make_call.assert_called_once()
         args, kwargs = sender._make_call.call_args
-        assert args[1] == "run_setup.log"
+        assert kwargs["filename"] == "run_setup.log"
         # Verify the data content was captured correctly
         assert sender._captured_data_content() == run_log_content.encode("utf-8")
         assert kwargs["run_id"] == run.id
@@ -719,7 +714,7 @@ class TestArtifactUploadIntegration:
         args, kwargs = sender._make_call.call_args
 
         # Verify the filename
-        assert args[1] == "test.log"
+        assert kwargs["filename"] == "test.log"
 
         # Verify the data content was properly converted from BufferedReader to bytes
         captured_data = sender._captured_data_content()
@@ -754,7 +749,7 @@ class TestArtifactUploadIntegration:
         args, kwargs = sender._make_call.call_args
 
         # Verify the filename
-        assert args[1] == "test.log"
+        assert kwargs["filename"] == "test.log"
 
         # Verify the data content was properly converted from text stream to bytes
         captured_data = sender._captured_data_content()

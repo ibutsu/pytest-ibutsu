@@ -337,13 +337,11 @@ class IbutsuSender:
                 logger.error("Artifact size is greater than upload limit")
                 return
 
-            # Get prepared data using the unified handler
-            processed_data = handler.prepared_data
-
+            # Pass data directly to the API
             self._make_call(
                 self.artifact_api.upload_artifact,
-                filename,
-                processed_data,
+                filename=filename,
+                file=handler.prepared_data,
                 hide_exception=False,
                 **kwargs,
             )
