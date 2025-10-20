@@ -61,7 +61,12 @@ include = ["/src"]
 packages = ["/src/pytest_ibutsu"]
 
 [tool.hatch.envs.hatch-test]
-extra-dependencies = ["pytest-ibutsu[test]"]
+extra-dependencies = [
+  "pytest-xdist",
+  "python-jose",
+  "pytest-cov",
+  "coverage[toml]",
+]
 
 [[tool.hatch.envs.hatch-test.matrix]]
 python = ["3.11", "3.12", "3.13"]
