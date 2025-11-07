@@ -8,7 +8,7 @@ import pytest
 from collections import namedtuple
 from pathlib import Path
 from typing import Iterator, Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from pytest_ibutsu.archiver import IbutsuArchiver, dump_to_archive
 from pytest_ibutsu.modeling import IbutsuTestResult, IbutsuTestRun
@@ -527,6 +527,188 @@ class TestDumpToArchive:
             )
 
         finally:
+            os.chdir(original_cwd)
+
+
+class TestArchiverBasicMethods:
+    """Test basic methods of IbutsuArchiver."""
+
+    def test_add_dir(self, archive_name):
+        """Test add_dir creates a directory entry."""
+        archiver = IbutsuArchiver(archive_name)
+
+        with archiver:
+            archiver.add_dir("test_directory")
+
+            # Verify directory was added
+            members = archiver.tar.getmembers()
+            assert any(m.name == "test_directory" and m.isdir() for m in members)
+
+    def test_add_file(self, archive_name):
+        """Test add_file creates a file entry."""
+        archiver = IbutsuArchiver(archive_name)
+        content = b"test file content"
+
+        with archiver:
+            archiver.add_file("test_file.txt", content)
+
+            # Verify file was added
+            members = archiver.tar.getmembers()
+            assert any(m.name == "test_file.txt" and m.isfile() for m in members)
+
+        # Read back and verify content
+        with tarfile.open(f"{archive_name}.tar.gz", "r:gz") as tar:
+            file_member = tar.getmember("test_file.txt")
+            extracted_content = tar.extractfile(file_member).read()
+            assert extracted_content == content
+
+    def test_add_dir_with_timestamp(self, archive_name):
+        """Test add_dir sets timestamp correctly."""
+        import time
+
+        archiver = IbutsuArchiver(archive_name)
+        current_time = int(time.time())
+
+        with archiver:
+            archiver.add_dir("timestamped_dir")
+
+            # Verify timestamp is close to current time
+            members = archiver.tar.getmembers()
+            dir_member = next(m for m in members if m.name == "timestamped_dir")
+            assert abs(dir_member.mtime - current_time) < 5  # Within 5 seconds
+
+    def test_add_file_with_mode(self, archive_name):
+        """Test add_file sets correct mode."""
+        archiver = IbutsuArchiver(archive_name)
+
+        with archiver:
+            archiver.add_file("mode_test.txt", b"content")
+
+            # Verify mode is set correctly
+            members = archiver.tar.getmembers()
+            file_member = next(m for m in members if m.name == "mode_test.txt")
+            assert file_member.mode == 33184
+
+    def test_add_result_integration(self, archive_name):
+        """Test add_result creates proper structure."""
+        run = IbutsuTestRun(id="test-run")
+        result = IbutsuTestResult(test_id="test1")
+        result.metadata["test_data"] = "test value"
+
+        with IbutsuArchiver(archive_name) as archiver:
+            archiver.add_result(run, result)
+
+        # Verify the archive structure
+        with tarfile.open(f"{archive_name}.tar.gz", "r:gz") as tar:
+            members = tar.getmembers()
+            # Should have directory and result.json
+            assert any(m.name == f"{run.id}/{result.id}" and m.isdir() for m in members)
+            assert any(
+                m.name == f"{run.id}/{result.id}/result.json" and m.isfile()
+                for m in members
+            )
+
+    def test_add_run_integration(self, archive_name):
+        """Test add_run creates proper structure."""
+        run = IbutsuTestRun(id="test-run")
+        run.metadata["run_data"] = "test value"
+
+        with IbutsuArchiver(archive_name) as archiver:
+            archiver.add_run(run)
+
+        # Verify the archive structure
+        with tarfile.open(f"{archive_name}.tar.gz", "r:gz") as tar:
+            members = tar.getmembers()
+            # Should have directory and run.json
+            assert any(m.name == run.id and m.isdir() for m in members)
+            assert any(m.name == f"{run.id}/run.json" and m.isfile() for m in members)
+
+    def test_archiver_context_manager(self, tmp_path):
+        """Test IbutsuArchiver as context manager."""
+        archive_name = str(tmp_path / "test_archive")
+
+        with IbutsuArchiver(archive_name) as archiver:
+            assert archiver.tar is not None
+            assert not archiver.tar.closed
+            archiver.add_file("test.txt", b"content")
+
+        # After context exit, tar should be closed
+        assert archiver.tar.closed
+
+        # Archive file should exist
+        archive_path = Path(f"{archive_name}.tar.gz")
+        assert archive_path.exists()
+
+    def test_archiver_add_dir_creates_directory(self, tmp_path):
+        """Test add_dir creates directory entry."""
+        archive_name = str(tmp_path / "test_archive")
+
+        with IbutsuArchiver(archive_name) as archiver:
+            archiver.add_dir("test_dir")
+
+            members = archiver.tar.getmembers()
+            dir_member = next((m for m in members if m.name == "test_dir"), None)
+
+            assert dir_member is not None
+            assert dir_member.isdir()
+
+    def test_archiver_add_file_creates_file(self, tmp_path):
+        """Test add_file creates file entry."""
+        archive_name = str(tmp_path / "test_archive")
+        content = b"test file content"
+
+        with IbutsuArchiver(archive_name) as archiver:
+            archiver.add_file("test.txt", content)
+
+            members = archiver.tar.getmembers()
+            file_member = next((m for m in members if m.name == "test.txt"), None)
+
+            assert file_member is not None
+            assert file_member.isfile()
+            assert file_member.size == len(content)
+
+    def test_get_bytes_with_bytes(self, tmp_path):
+        """Test _get_bytes with bytes input."""
+        content = b"test bytes"
+        result = IbutsuArchiver._get_bytes(content)
+        assert result == content
+
+    def test_get_bytes_with_path(self, tmp_path):
+        """Test _get_bytes with file path."""
+        test_file = tmp_path / "test.txt"
+        test_file.write_bytes(b"file content")
+
+        result = IbutsuArchiver._get_bytes(str(test_file))
+        assert result == b"file content"
+
+    def test_dump_to_archive_creates_archive(self, tmp_path, monkeypatch):
+        """Test dump_to_archive creates archive file."""
+        # Change to tmp_path for test
+        original_cwd = Path.cwd()
+        try:
+            monkeypatch.chdir(tmp_path)
+
+            # Create mock plugin
+            plugin = Mock()
+            plugin.run = IbutsuTestRun(id="test-run-123")
+            plugin.results = {
+                "r1": IbutsuTestResult(test_id="test1"),
+                "r2": IbutsuTestResult(test_id="test2"),
+            }
+            plugin.summary_info = {}
+
+            dump_to_archive(plugin)
+
+            # Check archive was created
+            archive_path = tmp_path / f"{plugin.run.id}.tar.gz"
+            assert archive_path.exists()
+
+            # Check summary_info was updated
+            assert plugin.summary_info["archive_created"] is True
+            assert plugin.summary_info["archive_path"] == f"{plugin.run.id}.tar.gz"
+        finally:
+            import os
+
             os.chdir(original_cwd)
 
 

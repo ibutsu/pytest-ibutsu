@@ -16,7 +16,34 @@ from pytest_ibutsu.modeling import (
     Summary,
     IbutsuTestRun,
     IbutsuTestResult,
+    ItemMarker,
 )
+
+
+class TestItemMarker:
+    """Test the ItemMarker TypedDict."""
+
+    def test_item_marker_structure(self):
+        """Test ItemMarker can be created with correct structure."""
+        marker: ItemMarker = {
+            "name": "test_marker",
+            "args": ("arg1", "arg2"),
+            "kwargs": {"key": "value"},
+        }
+        assert marker["name"] == "test_marker"
+        assert marker["args"] == ("arg1", "arg2")
+        assert marker["kwargs"] == {"key": "value"}
+
+    def test_item_marker_empty_args_kwargs(self):
+        """Test ItemMarker with empty args and kwargs."""
+        marker: ItemMarker = {
+            "name": "simple_marker",
+            "args": (),
+            "kwargs": {},
+        }
+        assert marker["name"] == "simple_marker"
+        assert len(marker["args"]) == 0
+        assert len(marker["kwargs"]) == 0
 
 
 class TestValidateUuidString:
@@ -783,6 +810,49 @@ class TestSummary:
         assert summary.errors == 1
         assert summary.skips == 1
 
+    def test_summary_with_passed_result(self):
+        """Test Summary.increment with passed result doesn't increment failure counters."""
+        summary = Summary()
+        result = IbutsuTestResult(test_id="test1", result="passed")
+        summary.increment(result)
+
+        assert summary.tests == 1
+        assert summary.collected == 1
+        assert summary.failures == 0
+        assert summary.errors == 0
+        assert summary.skips == 0
+        assert summary.xfailures == 0
+        assert summary.xpasses == 0
+
+    def test_summary_from_results_empty_list(self):
+        """Test Summary.from_results with empty results list."""
+        results = []
+        summary = Summary.from_results(results)
+
+        assert summary.tests == 0
+        assert summary.collected == 0
+        assert summary.failures == 0
+
+    def test_summary_from_results_mixed(self):
+        """Test Summary.from_results with mixed result types."""
+        results = [
+            IbutsuTestResult(test_id="t1", result="passed"),
+            IbutsuTestResult(test_id="t2", result="failed"),
+            IbutsuTestResult(test_id="t3", result="error"),
+            IbutsuTestResult(test_id="t4", result="skipped"),
+            IbutsuTestResult(test_id="t5", result="xfailed"),
+            IbutsuTestResult(test_id="t6", result="xpassed"),
+        ]
+        summary = Summary.from_results(results)
+
+        assert summary.tests == 6
+        assert summary.collected == 6
+        assert summary.failures == 1
+        assert summary.errors == 1
+        assert summary.skips == 1
+        assert summary.xfailures == 1
+        assert summary.xpasses == 1
+
 
 class TestIbutsuTestRun:
     """Test the IbutsuTestRun class."""
@@ -1001,6 +1071,207 @@ class TestIbutsuTestRun:
         merged_run = IbutsuTestRun.from_sequential_test_runs([run1, run2])
 
         assert merged_run.duration == 4.0
+
+    def test_jenkins_env_vars_partial(self, monkeypatch):
+        """Test with only JOB_NAME set (BUILD_NUMBER missing)."""
+        monkeypatch.setenv("JOB_NAME", "test-job")
+        monkeypatch.delenv("BUILD_NUMBER", raising=False)
+
+        run = IbutsuTestRun()
+
+        # Should not add jenkins metadata without BUILD_NUMBER
+        assert "jenkins" not in run.metadata
+
+    def test_jenkins_env_vars_complete(self, monkeypatch):
+        """Test with complete Jenkins environment variables."""
+        monkeypatch.setenv("JOB_NAME", "test-job")
+        monkeypatch.setenv("BUILD_NUMBER", "42")
+        monkeypatch.setenv("BUILD_URL", "http://jenkins.local/job/test-job/42")
+
+        run = IbutsuTestRun()
+
+        assert "jenkins" in run.metadata
+        assert run.metadata["jenkins"]["job_name"] == "test-job"
+        assert run.metadata["jenkins"]["build_number"] == "42"
+        assert (
+            run.metadata["jenkins"]["build_url"]
+            == "http://jenkins.local/job/test-job/42"
+        )
+
+    def test_ibutsu_env_id_set(self, monkeypatch):
+        """Test IBUTSU_ENV_ID environment variable."""
+        monkeypatch.setenv("IBUTSU_ENV_ID", "env-123")
+
+        run = IbutsuTestRun()
+
+        assert run.metadata["env_id"] == "env-123"
+
+    def test_no_env_vars_set(self, monkeypatch):
+        """Test without any environment variables set."""
+        monkeypatch.delenv("JOB_NAME", raising=False)
+        monkeypatch.delenv("BUILD_NUMBER", raising=False)
+        monkeypatch.delenv("BUILD_URL", raising=False)
+        monkeypatch.delenv("IBUTSU_ENV_ID", raising=False)
+
+        run = IbutsuTestRun()
+
+        assert "jenkins" not in run.metadata
+        assert "env_id" not in run.metadata
+
+    def test_from_json_basic(self):
+        """Test IbutsuTestRun.from_json with basic data."""
+        json_data = {
+            "id": "test-run-123",
+            "component": "auth",
+            "env": "production",
+            "source": "jenkins",
+            "metadata": {"build": "456"},
+        }
+
+        run = IbutsuTestRun.from_json(json_data)
+
+        assert run.id == "test-run-123"
+        assert run.component == "auth"
+        assert run.env == "production"
+        assert run.source == "jenkins"
+        assert run.metadata == {"build": "456"}
+
+    def test_to_dict_basic(self):
+        """Test IbutsuTestRun.to_dict."""
+        run = IbutsuTestRun(component="test-comp", env="staging", source="local")
+        run.metadata["test_key"] = "test_value"
+
+        result = run.to_dict()
+
+        assert "component" in result
+        assert "env" in result
+        assert "source" in result
+        assert "metadata" in result
+        assert result["metadata"]["test_key"] == "test_value"
+        # Private attributes should not be in result
+        assert "_artifacts" not in result
+        assert "_results" not in result
+        assert "_start_unix_time" not in result
+
+    def test_from_xdist_test_runs_basic(self):
+        """Test from_xdist_test_runs with basic runs."""
+        run1 = IbutsuTestRun(id="run1", component="comp1")
+        run1._results = [IbutsuTestResult(test_id="t1")]
+
+        run2 = IbutsuTestRun(id="run2", component="comp2")
+        run2._results = [IbutsuTestResult(test_id="t2")]
+
+        merged = IbutsuTestRun.from_xdist_test_runs([run1, run2])
+
+        # Should use first run's properties
+        assert merged.id == run1.id
+        assert merged.component == run1.component
+        # Should have all results
+        assert len(merged._results) == 2
+
+    def test_from_sequential_test_runs_basic(self):
+        """Test from_sequential_test_runs with basic runs."""
+        import time
+
+        run1 = IbutsuTestRun(duration=1.0)
+        run1.start_time = "2024-01-01T00:00:00Z"
+        run1._results = [IbutsuTestResult(test_id="t1")]
+
+        time.sleep(0.01)  # Ensure different timestamps
+
+        run2 = IbutsuTestRun(duration=2.0)
+        run2.start_time = "2024-01-01T00:00:01Z"
+        run2._results = [IbutsuTestResult(test_id="t2")]
+
+        merged = IbutsuTestRun.from_sequential_test_runs([run1, run2])
+
+        # Should sum durations
+        assert merged.duration == 3.0
+        # Should use earliest start time
+        assert merged.start_time == run1.start_time
+
+    def test_get_metadata_static_method(self):
+        """Test IbutsuTestRun.get_metadata static method."""
+        run1 = IbutsuTestRun(metadata={"key1": "value1", "shared": "from_run1"})
+        run2 = IbutsuTestRun(metadata={"key2": "value2", "shared": "from_run2"})
+
+        combined = IbutsuTestRun.get_metadata([run1, run2])
+
+        assert combined["key1"] == "value1"
+        assert combined["key2"] == "value2"
+        # Later metadata should overwrite
+        assert combined["shared"] == "from_run2"
+
+    def test_start_timer_sets_values(self):
+        """Test start_timer sets both unix time and ISO time."""
+        import time
+
+        run = IbutsuTestRun()
+        before = time.time()
+
+        run.start_timer()
+
+        after = time.time()
+
+        # Check unix time is in expected range
+        assert before <= run._start_unix_time <= after
+        # Check ISO time is set
+        assert run.start_time != ""
+        assert "T" in run.start_time  # ISO format contains T
+
+    def test_set_duration_with_timer(self):
+        """Test set_duration calculates correct duration."""
+        import time
+
+        run = IbutsuTestRun()
+        run.start_timer()
+
+        time.sleep(0.01)  # Small delay
+
+        run.set_duration()
+
+        assert run.duration > 0
+        assert run.duration < 1  # Should be less than 1 second
+
+    def test_set_duration_without_timer(self):
+        """Test set_duration without calling start_timer."""
+        run = IbutsuTestRun()
+
+        run.set_duration()
+
+        # Duration should be 0 if timer never started
+        assert run.duration == 0.0
+
+    def test_attach_artifact_bytes(self):
+        """Test attach_artifact with bytes."""
+        run = IbutsuTestRun()
+        content = b"binary content"
+
+        run.attach_artifact("file.bin", content)
+
+        assert run._artifacts["file.bin"] == content
+
+    def test_attach_artifact_string(self):
+        """Test attach_artifact with string."""
+        run = IbutsuTestRun()
+        content = "text content"
+
+        run.attach_artifact("file.txt", content)
+
+        assert run._artifacts["file.txt"] == content
+
+    def test_attach_multiple_artifacts(self):
+        """Test attaching multiple artifacts."""
+        run = IbutsuTestRun()
+
+        run.attach_artifact("file1.txt", b"content1")
+        run.attach_artifact("file2.txt", b"content2")
+        run.attach_artifact("file3.txt", "text content")
+
+        assert len(run._artifacts) == 3
+        assert run._artifacts["file1.txt"] == b"content1"
+        assert run._artifacts["file2.txt"] == b"content2"
+        assert run._artifacts["file3.txt"] == "text content"
 
 
 class TestIbutsuTestResult:
@@ -1499,19 +1770,188 @@ class TestConverterEdgeCases:
             pass
 
 
-class TestMetadataSerializationEdgeCases:
-    """Test edge cases in metadata serialization."""
+class TestConverterFactoryHooks:
+    """Test converter factory hook functions."""
 
-    def test_complex_nested_metadata_with_circular_reference(self):
-        """Test handling of complex metadata structures."""
-        # Create a structure that might cause issues
-        metadata = {"level1": {"level2": {"level3": {}}}}
-        metadata["level1"]["level2"]["level3"]["back_ref"] = metadata["level1"]
+    def test_is_non_serializable_type_with_property(self):
+        """Test _is_non_serializable_type with property descriptor."""
+        from pytest_ibutsu.modeling import _is_non_serializable_type
 
-        # The converter should handle this gracefully
-        try:
-            result = ibutsu_converter.unstructure(metadata)
-            assert isinstance(result, dict)
-        except Exception:
-            # If it fails, that's expected for circular references
+        assert _is_non_serializable_type(property) is True
+
+    def test_is_non_serializable_type_with_classmethod(self):
+        """Test _is_non_serializable_type with classmethod."""
+        from pytest_ibutsu.modeling import _is_non_serializable_type
+
+        assert _is_non_serializable_type(classmethod) is True
+
+    def test_is_non_serializable_type_with_staticmethod(self):
+        """Test _is_non_serializable_type with staticmethod."""
+        from pytest_ibutsu.modeling import _is_non_serializable_type
+
+        assert _is_non_serializable_type(staticmethod) is True
+
+    def test_is_non_serializable_type_with_builtin(self):
+        """Test _is_non_serializable_type with builtin types."""
+        from pytest_ibutsu.modeling import _is_non_serializable_type
+
+        # Test various builtin types
+        assert (
+            _is_non_serializable_type(type(len)) is True
+        )  # builtin_function_or_method
+
+    def test_create_attrs_unstructure_hook_factory(self):
+        """Test _create_attrs_unstructure_hook_factory."""
+        from pytest_ibutsu.modeling import (
+            _create_attrs_unstructure_hook_factory,
+            ibutsu_converter,
+        )
+        import attrs
+
+        @attrs.define
+        class TestClass:
+            public: str = "public"
+            _private: str = attrs.field(default="private", init=False)
+
+        factory = _create_attrs_unstructure_hook_factory(ibutsu_converter)
+        hook = factory(TestClass)
+
+        instance = TestClass()
+        result = hook(instance)
+
+        assert "public" in result
+        assert "_private" not in result
+
+    def test_configure_converter_registers_hooks(self):
+        """Test that _configure_converter registers all necessary hooks."""
+        from pytest_ibutsu.modeling import _configure_converter
+        from cattrs.preconf.json import make_converter as make_json_converter
+
+        # Create a new converter and configure it
+        test_converter = make_json_converter()
+        _configure_converter(test_converter)
+
+        # Test that hooks are registered by trying to unstructure various types
+        assert isinstance(test_converter.unstructure(len), str)
+        assert isinstance(test_converter.unstructure(ValueError("test")), str)
+        assert isinstance(test_converter.unstructure(type), str)
+
+    def test_custom_class_instance_serialization(self):
+        """Test custom class instance hook."""
+
+        class CustomClass:
+            def __init__(self):
+                self.value = "test"
+
+            def __str__(self):
+                return f"CustomClass(value={self.value})"
+
+        instance = CustomClass()
+        # The converter should handle this custom class
+        result = ibutsu_converter.unstructure(instance)
+        # Either as a dict (if attrs) or as a string
+        assert isinstance(result, (dict, str))
+
+
+class TestSimpleUnstructureHookEdgeCases:
+    """Test _simple_unstructure_hook edge cases."""
+
+    def test_simple_unstructure_hook_with_exception_in_str(self):
+        """Test _simple_unstructure_hook when str() raises exception."""
+
+        class BadStr:
+            def __str__(self):
+                raise RuntimeError("Cannot convert to string")
+
+        result = _simple_unstructure_hook(BadStr())
+        # Should fall back to repr or object representation
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_simple_unstructure_hook_with_exception_in_repr(self):
+        """Test _simple_unstructure_hook when both str() and repr() raise exceptions."""
+
+        class BadBoth:
+            def __str__(self):
+                raise RuntimeError("Cannot convert to string")
+
+            def __repr__(self):
+                raise RuntimeError("Cannot get repr")
+
+        result = _simple_unstructure_hook(BadBoth())
+        # Should fall back to object id
+        assert isinstance(result, str)
+        assert "<object at 0x" in result
+
+    def test_is_non_serializable_type_property(self):
+        """Test _is_non_serializable_type with property."""
+        from pytest_ibutsu.modeling import _is_non_serializable_type
+
+        assert _is_non_serializable_type(property) is True
+
+    def test_is_non_serializable_type_classmethod(self):
+        """Test _is_non_serializable_type with classmethod."""
+        from pytest_ibutsu.modeling import _is_non_serializable_type
+
+        assert _is_non_serializable_type(classmethod) is True
+
+    def test_is_non_serializable_type_staticmethod(self):
+        """Test _is_non_serializable_type with staticmethod."""
+        from pytest_ibutsu.modeling import _is_non_serializable_type
+
+        assert _is_non_serializable_type(staticmethod) is True
+
+    def test_is_non_serializable_type_builtin_function(self):
+        """Test _is_non_serializable_type with builtin function."""
+        from pytest_ibutsu.modeling import _is_non_serializable_type
+
+        assert _is_non_serializable_type(type(len)) is True
+
+    def test_is_non_serializable_type_normal_class(self):
+        """Test _is_non_serializable_type with normal class."""
+        from pytest_ibutsu.modeling import _is_non_serializable_type
+
+        class NormalClass:
             pass
+
+        # Normal classes should not be considered non-serializable
+        assert _is_non_serializable_type(NormalClass) is False
+
+    def test_simple_unstructure_hook_with_str(self):
+        """Test _simple_unstructure_hook with string."""
+        result = _simple_unstructure_hook("test string")
+        assert result == "test string"
+
+    def test_simple_unstructure_hook_with_exception(self):
+        """Test _simple_unstructure_hook with exception."""
+        exc = ValueError("test error")
+        result = _simple_unstructure_hook(exc)
+        assert isinstance(result, str)
+        assert "test error" in result
+
+    def test_simple_unstructure_hook_fallback_to_repr(self):
+        """Test _simple_unstructure_hook falls back to repr."""
+
+        class BadStr:
+            def __str__(self):
+                raise RuntimeError("str failed")
+
+            def __repr__(self):
+                return "BadStr repr"
+
+        result = _simple_unstructure_hook(BadStr())
+        assert "BadStr repr" in result
+
+    def test_simple_unstructure_hook_fallback_to_id(self):
+        """Test _simple_unstructure_hook falls back to object id."""
+
+        class BadBoth:
+            def __str__(self):
+                raise RuntimeError("str failed")
+
+            def __repr__(self):
+                raise RuntimeError("repr failed")
+
+        result = _simple_unstructure_hook(BadBoth())
+        assert isinstance(result, str)
+        assert "<object at 0x" in result
