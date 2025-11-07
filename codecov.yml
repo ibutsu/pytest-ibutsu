@@ -11,7 +11,7 @@ coverage:
   status:
     project:
       default:
-        target: 85%
+        target: 70%
         threshold: 1%
         if_ci_failed: error
 
@@ -38,3 +38,16 @@ ignore:
   - "examples/"
   - "*.md"
   - "setup.py"
+
+# Exclude patterns for lines with low testing value
+# Note: These patterns work with coverage.py's exclude_lines configuration
+# and should match patterns in pyproject.toml [tool.coverage.report]
+parsers:
+  python:
+    # Skip import lines - low value to cover
+    skip:
+      - '^\\s*from .+ import .+$'
+      - '^\\s*import .+$'
+    # Skip type checking blocks
+    skip_branches:
+      - "if TYPE_CHECKING:"

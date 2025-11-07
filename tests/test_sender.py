@@ -887,6 +887,198 @@ class TestCABundleHandling:
         assert not hasattr(config_arg, "ssl_ca_cert") or config_arg.ssl_ca_cert is None
 
 
+class TestArtifactDataHandler:
+    """Test the ArtifactDataHandler class."""
+
+    def test_size_with_none(self):
+        """Test size calculation with None data."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        handler = ArtifactDataHandler(None)
+        assert handler.size == 4  # len("None")
+
+    def test_size_with_bytes(self):
+        """Test size calculation with bytes data."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        handler = ArtifactDataHandler(b"test content")
+        assert handler.size == 12
+
+    def test_size_with_string(self):
+        """Test size calculation with string data."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        handler = ArtifactDataHandler("test content")
+        assert handler.size == 12
+
+    def test_size_with_file_path(self, tmp_path):
+        """Test size calculation with file path."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("test content")
+
+        handler = ArtifactDataHandler(str(test_file))
+        assert handler.size == 12
+
+    def test_size_with_url_string(self):
+        """Test size calculation with URL string."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        url = "http://example.com/file.txt"
+        handler = ArtifactDataHandler(url)
+        assert handler.size == len(url.encode("utf-8"))
+
+    def test_size_with_file_like_seekable(self):
+        """Test size calculation with seekable file-like object."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+        import io
+
+        content = b"test content"
+        file_like = io.BytesIO(content)
+
+        handler = ArtifactDataHandler(file_like)
+        assert handler.size == len(content)
+        # Verify position was restored
+        assert file_like.tell() == 0
+
+    def test_size_with_file_like_non_seekable(self):
+        """Test size calculation with non-seekable file-like object."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        content = b"test content"
+
+        # Create a non-seekable file-like object
+        class NonSeekable:
+            def __init__(self, data):
+                self.data = data
+                self.pos = 0
+
+            def read(self):
+                result = self.data[self.pos :]
+                self.pos = len(self.data)
+                return result
+
+        file_like = NonSeekable(content)
+        handler = ArtifactDataHandler(file_like)
+        assert handler.size == len(content)
+
+    def test_size_with_oserror(self):
+        """Test size calculation with OSError."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        # Create an object that causes OSError on str()
+        class BadPath:
+            def __fspath__(self):
+                raise OSError("Bad path")
+
+        handler = ArtifactDataHandler(BadPath())
+        # Should fall back to string representation
+        assert handler.size > 0
+
+    def test_is_size_acceptable_under_limit(self):
+        """Test size acceptability check under limit."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        handler = ArtifactDataHandler(b"small")
+        assert handler.is_size_acceptable() is True
+
+    def test_is_size_acceptable_over_limit(self):
+        """Test size acceptability check over limit."""
+        from pytest_ibutsu.sender import ArtifactDataHandler, UPLOAD_LIMIT
+
+        large_data = b"x" * (UPLOAD_LIMIT + 1)
+        handler = ArtifactDataHandler(large_data)
+        assert handler.is_size_acceptable() is False
+
+    def test_is_size_acceptable_with_type_error(self):
+        """Test size acceptability with TypeError."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+        from unittest.mock import patch
+
+        handler = ArtifactDataHandler(b"test")
+
+        # Mock the size property to raise TypeError
+        with patch.object(
+            type(handler),
+            "size",
+            property(lambda self: (_ for _ in ()).throw(TypeError("Cannot get size"))),
+        ):
+            assert handler.is_size_acceptable() is False
+
+    def test_prepared_data_with_none(self):
+        """Test prepared data with None."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        handler = ArtifactDataHandler(None)
+        assert handler.prepared_data == "None"
+
+    def test_prepared_data_with_bytes(self):
+        """Test prepared data with bytes."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        data = b"test content"
+        handler = ArtifactDataHandler(data)
+        assert handler.prepared_data == data
+
+    def test_prepared_data_with_file_like(self):
+        """Test prepared data with file-like object."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+        import io
+
+        content = b"test content"
+        file_like = io.BytesIO(content)
+
+        handler = ArtifactDataHandler(file_like)
+        assert handler.prepared_data == content
+
+    def test_prepared_data_with_text_file_like(self):
+        """Test prepared data with text file-like object."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+        import io
+
+        content = "test content"
+        file_like = io.StringIO(content)
+
+        handler = ArtifactDataHandler(file_like)
+        assert handler.prepared_data == content.encode("utf-8")
+
+    def test_prepared_data_with_oserror(self):
+        """Test prepared data with OSError during read."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        # Create a file-like object that raises OSError on read
+        class BadRead:
+            def read(self):
+                raise OSError("Cannot read")
+
+        handler = ArtifactDataHandler(BadRead())
+        # Should fall back to string representation
+        assert isinstance(handler.prepared_data, (str, bytes))
+
+    def test_prepared_data_with_permission_error_file(self, tmp_path, monkeypatch):
+        """Test prepared data with PermissionError on file."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+        from pathlib import Path
+
+        test_file = tmp_path / "restricted.txt"
+        test_file.write_text("content")
+
+        # Mock Path.read_bytes to raise PermissionError
+        original_read_bytes = Path.read_bytes
+
+        def mock_read_bytes(self):
+            if self.name == "restricted.txt":
+                raise PermissionError("Permission denied")
+            return original_read_bytes(self)
+
+        monkeypatch.setattr(Path, "read_bytes", mock_read_bytes)
+
+        handler = ArtifactDataHandler(str(test_file))
+        # Should fall back to string
+        assert handler.prepared_data == str(test_file)
+
+
 class TestSenderRetry:
     """Test retry functionality for network failures in IbutsuSender."""
 
@@ -1052,3 +1244,88 @@ class TestSenderRetry:
         expected_delays = [1.0 * (2.0**i) for i in range(MAX_CALL_RETRIES - 1)]
         expected_calls = [call(delay) for delay in expected_delays]
         mock_sleep.assert_has_calls(expected_calls)
+
+    def test_sender_cache_cleanup(self):
+        """Test that sender cache is cleaned up when results are ready."""
+        sender = IbutsuSender("http://example.com/api")
+        mock_method = Mock(return_value="result")
+
+        # Create mock async results
+        mock_result1 = Mock()
+        mock_result1.ready.return_value = True
+        mock_result2 = Mock()
+        mock_result2.ready.return_value = False
+
+        sender._sender_cache = [mock_result1, mock_result2]
+
+        # Call method - should clean up ready results
+        sender._make_call(mock_method)
+
+        # Only the non-ready result should remain
+        assert len(sender._sender_cache) == 1
+        assert sender._sender_cache[0] == mock_result2
+
+
+class TestArtifactDataHandlerFileOperations:
+    """Test file operation edge cases in ArtifactDataHandler."""
+
+    def test_calculate_size_with_string_not_url_not_file(self):
+        """Test _calculate_size with string that's neither URL nor file."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        handler = ArtifactDataHandler("just a string")
+        assert handler.size == len(b"just a string")
+
+    def test_calculate_size_with_type_error(self):
+        """Test _calculate_size with TypeError."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        # Create object that causes TypeError
+        class BadType:
+            pass
+
+        handler = ArtifactDataHandler(BadType())
+        # Should convert to string
+        assert handler.size > 0
+
+    def test_prepared_data_with_file_path(self, tmp_path):
+        """Test _prepare_content with file path."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_bytes(b"test content")
+
+        handler = ArtifactDataHandler(str(test_file))
+        assert handler.prepared_data == b"test content"
+
+    def test_prepared_data_with_https_url(self):
+        """Test _prepare_content with HTTPS URL."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        url = "https://example.com/file.txt"
+        handler = ArtifactDataHandler(url)
+        assert handler.prepared_data == url
+
+    def test_read_file_like_content_with_str_return(self):
+        """Test _read_file_like_content when file-like returns string."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+        import io
+
+        content = "string content"
+        file_like = io.StringIO(content)
+
+        handler = ArtifactDataHandler(file_like)
+        # Should convert string to bytes
+        assert handler.prepared_data == content.encode("utf-8")
+
+    def test_read_file_like_content_with_unknown_type(self):
+        """Test _read_file_like_content with unknown return type."""
+        from pytest_ibutsu.sender import ArtifactDataHandler
+
+        class WeirdFilelike:
+            def read(self):
+                return 12345  # Return an integer
+
+        handler = ArtifactDataHandler(WeirdFilelike())
+        # Should convert to string then bytes
+        assert isinstance(handler.prepared_data, bytes)
