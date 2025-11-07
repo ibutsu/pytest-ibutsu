@@ -60,6 +60,23 @@ include = ["/src"]
 [tool.hatch.build.targets.wheel]
 packages = ["/src/pytest_ibutsu"]
 
+[tool.hatch.envs.default]
+dependencies = [
+  "pytest-xdist",
+  "python-jose",
+  "pytest-cov",
+  "coverage[toml]",
+]
+
+[tool.hatch.envs.default.scripts]
+test = "pytest {args}"
+test-cov = [
+  "coverage erase",
+  "pytest --cov=pytest_ibutsu --cov-report=term-missing --cov-report=xml --cov-report=html --cov-branch --cov-fail-under=74 {args}",
+]
+cov-report = "coverage report"
+cov-html = "coverage html"
+
 [tool.hatch.envs.hatch-test]
 extra-dependencies = [
   "pytest-xdist",
@@ -109,7 +126,7 @@ disallow_untyped_decorators = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Exclude source files from test collection to prevent model classes like IbutsuTestRun and IbutsuTestResult from being collected as test classes
-addopts = "--ignore-glob=src/**"
+addopts = "--ignore-glob=src/** -n 4"
 # Only collect test classes from actual test files, not from imported modules
 python_classes = ["Test*"]
 python_files = ["test_*.py", "*_test.py"]
@@ -117,6 +134,8 @@ python_files = ["test_*.py", "*_test.py"]
 [tool.coverage.run]
 source = ["src/pytest_ibutsu"]
 branch = true
+parallel = true
+concurrency = ["multiprocessing"]
 omit = [
     "*/tests/*",
     "*/test_*",
