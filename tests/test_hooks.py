@@ -349,9 +349,13 @@ class TestTerminalSummary:
 
         pytest_terminal_summary(terminalreporter, 0, config)
 
-        # Should not write any summary when no operations occurred
-        terminalreporter.write_sep.assert_not_called()
-        terminalreporter.write_line.assert_not_called()
+        # Should write summary failure when no operations occurred
+        terminalreporter.write_sep.assert_called_once_with(
+            "=", "pytest-ibutsu summary failure", bold=True
+        )
+        terminalreporter.write_line.assert_called_once()
+        args, _ = terminalreporter.write_line.call_args
+        assert "Skipping summary." in args[0]
 
     @pytest.mark.parametrize(
         "mock_terminal_summary_plugin_config",
@@ -486,6 +490,8 @@ class TestTerminalSummary:
         mock_plugin.enabled = True
         mock_plugin.is_s3_mode = False
         mock_plugin.is_server_mode = True
+        mock_plugin.ibutsu_project = "test-project"
+        mock_plugin.project_uuid = "12345678-1234-1234-1234-123456789abc"
         mock_plugin.summary_info = {
             "archive_created": True,
             "archive_path": "test-run-abc.tar.gz",
@@ -521,7 +527,7 @@ class TestTerminalSummary:
             "✓ Archive created: test-run-abc.tar.gz"
         )
         terminalreporter.write_line.assert_any_call(
-            "✓ Results uploaded to: https://ibutsu.example.com/runs/test-run-abc"
+            "✓ Results uploaded to: https://ibutsu.example.com/project/12345678-1234-1234-1234-123456789abc/runs/test-run-abc"
         )
 
     def test_terminal_summary_with_errors(self, isolate_ibutsu_env_vars):

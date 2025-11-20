@@ -11,9 +11,14 @@ import uuid
 from base64 import urlsafe_b64decode
 from datetime import datetime, UTC
 from datetime import timezone
+from functools import cached_property
 from pathlib import Path
 from typing import Generator, Any, TYPE_CHECKING
 from typing import Iterator
+
+from ibutsu_client.api_client import ApiClient
+from ibutsu_client.configuration import Configuration
+from ibutsu_client.api.project_api import ProjectApi
 
 if TYPE_CHECKING:
     from _pytest.terminal import TerminalReporter
@@ -21,7 +26,7 @@ if TYPE_CHECKING:
 import pytest
 
 from .archiver import dump_to_archive
-from .modeling import IbutsuTestResult, IbutsuTestRun
+from .modeling import IbutsuTestResult, IbutsuTestRun, validate_uuid_string
 from .sender import send_data_to_ibutsu
 from .s3_uploader import upload_to_s3
 
@@ -121,6 +126,37 @@ class IbutsuPlugin:
         return (
             self.ibutsu_mode not in ("archive", "s3") and self.ibutsu_mode is not None
         )
+
+    @cached_property
+    def project_uuid(self) -> str:
+        """Return the ibutsu project value as a UUID.
+        If mode is upload and the `ibutsu_project` is a name, query the server to get the UUID.
+        """
+        project_value = self.ibutsu_project
+
+        if not self.is_server_mode:
+            return project_value
+
+        if validate_uuid_string(project_value):
+            return project_value
+
+        # Query the Ibutsu server to get the UUID
+        config = Configuration(access_token=self.ibutsu_token, host=self.ibutsu_server)
+        project_api = ProjectApi(ApiClient(config))
+
+        response = project_api.get_project_list(filter=[f"name={project_value}"])
+
+        if response.projects and len(response.projects) > 0:
+            resolved_uuid = str(response.projects[0].id)
+
+            logger.info(f"Resolved '{project_value}' to UUID: {resolved_uuid}")
+            return resolved_uuid
+        else:
+            logger.warning(
+                f"Could not find '{project_value}' on server. "
+                "Using project name in URL."
+            )
+            return project_value
 
     @property
     def ibutsu_server(self) -> str:
@@ -571,6 +607,10 @@ def pytest_terminal_summary(
     if not any(
         [summary["archive_created"], summary["s3_uploaded"], summary["server_uploaded"]]
     ):
+        terminalreporter.write_sep("=", "pytest-ibutsu summary failure", bold=True)
+        terminalreporter.write_line(
+            f"Skipping summary. (archive_created={summary['archive_created']}, s3_uploaded={summary['s3_uploaded']}, server_uploaded={summary['server_uploaded']})"
+        )
         return
 
     terminalreporter.write_sep("=", "pytest-ibutsu summary", bold=True)
@@ -598,7 +638,7 @@ def pytest_terminal_summary(
     if plugin.is_server_mode and summary["server_uploaded"]:
         if summary["frontend_url"]:
             terminalreporter.write_line(
-                f"✓ Results uploaded to: {summary['frontend_url']}/runs/{plugin.run.id}"
+                f"✓ Results uploaded to: {summary['frontend_url']}/project/{plugin.project_uuid}/runs/{plugin.run.id}"
             )
         else:
             terminalreporter.write_line(
