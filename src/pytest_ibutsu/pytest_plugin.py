@@ -17,8 +17,10 @@ from typing import Generator, Any, TYPE_CHECKING
 from typing import Iterator
 
 from ibutsu_client.api_client import ApiClient
-from ibutsu_client.configuration import Configuration
 from ibutsu_client.api.project_api import ProjectApi
+from ibutsu_client.exceptions import NotFoundException
+
+from .api_config import create_api_configuration  # Local import
 
 if TYPE_CHECKING:
     from _pytest.terminal import TerminalReporter
@@ -141,10 +143,20 @@ class IbutsuPlugin:
             return project_value
 
         # Query the Ibutsu server to get the UUID
-        config = Configuration(access_token=self.ibutsu_token, host=self.ibutsu_server)
+        logger.info(f"Using server: {self.ibutsu_server}")
+
+        config = create_api_configuration(
+            self.ibutsu_server, self.ibutsu_token, use_ssl_ca_cert=False
+        )
         project_api = ProjectApi(ApiClient(config))
 
-        response = project_api.get_project_list(filter=[f"name={project_value}"])
+        try:
+            response = project_api.get_project_list(filter=[f"name={project_value}"])
+        except NotFoundException:
+            logger.warning(
+                f"Could not find '{project_value}' on '{self.ibutsu_server}' (404)."
+            )
+            return project_value
 
         if response.projects and len(response.projects) > 0:
             resolved_uuid = str(response.projects[0].id)

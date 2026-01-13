@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from functools import cached_property
 from http.client import BadStatusLine
@@ -12,11 +11,12 @@ from typing import TypeVar, ParamSpec
 
 from ibutsu_client.api_client import ApiClient
 from ibutsu_client.exceptions import ApiException, ApiValueError
-from ibutsu_client.configuration import Configuration
 from ibutsu_client.api.artifact_api import ArtifactApi
 from ibutsu_client.api.health_api import HealthApi
 from ibutsu_client.api.result_api import ResultApi
 from ibutsu_client.api.run_api import RunApi
+
+from .api_config import create_api_configuration  # Local import
 from urllib3.exceptions import MaxRetryError
 from urllib3.exceptions import ProtocolError
 from urllib3.exceptions import NewConnectionError
@@ -41,8 +41,6 @@ RETRY_BASE_DELAY = 1.0
 
 # Backoff factor for exponential delay
 RETRY_BACKOFF_FACTOR = 2.0
-
-CA_BUNDLE_ENVS = ["REQUESTS_CA_BUNDLE", "IBUTSU_CA_BUNDLE"]
 
 logger = logging.getLogger(__name__)
 
@@ -212,11 +210,7 @@ class IbutsuSender:
         self._has_server_error = False
         self._server_error_tbs: list[str] = []
         self._sender_cache: list[Any] = []
-        config = Configuration(access_token=token, host=server_url)
-        # Only set the SSL CA cert if one of the environment variables is set
-        for env_var in CA_BUNDLE_ENVS:
-            if os.getenv(env_var, None):
-                config.ssl_ca_cert = os.getenv(env_var)
+        config = create_api_configuration(server_url, token)
         api_client = ApiClient(config)
         self.result_api = ResultApi(api_client)
         self.artifact_api = ArtifactApi(api_client)
@@ -226,12 +220,7 @@ class IbutsuSender:
     @classmethod
     def from_ibutsu_plugin(cls, ibutsu: IbutsuPlugin) -> IbutsuSender:
         logger.info(f"Ibutsu server: {ibutsu.ibutsu_server}")
-        ibutsu_server = ibutsu.ibutsu_server
-        if ibutsu.ibutsu_server.endswith("/"):
-            ibutsu_server = ibutsu_server[:-1]
-        if not ibutsu.ibutsu_server.endswith("/api"):
-            ibutsu_server += "/api"
-        return cls(server_url=ibutsu_server, token=ibutsu.ibutsu_token)
+        return cls(server_url=ibutsu.ibutsu_server, token=ibutsu.ibutsu_token)
 
     @property
     def frontend_url(self) -> str:
