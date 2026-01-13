@@ -11,9 +11,9 @@ from pytest_ibutsu.sender import (
     IbutsuSender,
     send_data_to_ibutsu,
     UPLOAD_LIMIT,
-    CA_BUNDLE_ENVS,
     MAX_CALL_RETRIES,
 )
+from pytest_ibutsu.api_config import CA_BUNDLE_ENVS
 from pytest_ibutsu.modeling import IbutsuTestRun, IbutsuTestResult
 
 
@@ -91,20 +91,22 @@ class TestIbutsuSender:
 
         with patch.object(IbutsuSender, "__init__", return_value=None) as mock_init:
             _ = IbutsuSender.from_ibutsu_plugin(mock_plugin)
+            # Raw URL is passed; normalization happens inside __init__ via create_api_configuration
             mock_init.assert_called_once_with(
-                server_url="http://example.com/api", token="test-token"
+                server_url="http://example.com", token="test-token"
             )
 
     def test_from_ibutsu_plugin_with_trailing_slash(self):
-        """Test URL handling with trailing slash."""
+        """Test URL handling with trailing slash - normalization happens in __init__."""
         mock_plugin = Mock()
         mock_plugin.ibutsu_server = "http://example.com/"
         mock_plugin.ibutsu_token = "test-token"
 
         with patch.object(IbutsuSender, "__init__", return_value=None) as mock_init:
             _ = IbutsuSender.from_ibutsu_plugin(mock_plugin)
+            # Raw URL is passed; normalization happens inside __init__ via create_api_configuration
             mock_init.assert_called_once_with(
-                server_url="http://example.com/api", token="test-token"
+                server_url="http://example.com/", token="test-token"
             )
 
     def test_from_ibutsu_plugin_with_api_suffix(self):
