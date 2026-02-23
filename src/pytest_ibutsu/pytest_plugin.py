@@ -514,8 +514,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         dest="ibutsu_source",
         action="store",
         metavar="SOURCE",
-        default="local",
-        help="set the source for the tests",
+        default=None,
+        help="set the source for the tests (default: IBUTSU_SOURCE env or 'local')",
     )
     group.addoption(
         "--ibutsu-data",

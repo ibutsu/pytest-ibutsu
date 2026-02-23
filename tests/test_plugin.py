@@ -113,6 +113,50 @@ def test_valid_token(isolate_ibutsu_env_vars: None, pytester: pytest.Pytester):
     IbutsuPlugin.from_config(test_config)
 
 
+def test_ibutsu_source_default_when_unset(
+    isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
+):
+    """Test ibutsu_source is 'local' when neither --ibutsu-source nor IBUTSU_SOURCE is set."""
+    test_config = pytester.parseconfig(
+        "--ibutsu", "archive", "--ibutsu-project", "test-project"
+    )
+    plugin = IbutsuPlugin.from_config(test_config)
+    assert plugin.ibutsu_source == "local"
+
+
+def test_ibutsu_source_from_env_when_cli_not_passed(
+    isolate_ibutsu_env_vars: None,
+    pytester: pytest.Pytester,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Test IBUTSU_SOURCE env is used when --ibutsu-source is not passed (CLI default is None)."""
+    monkeypatch.setenv("IBUTSU_SOURCE", "my-ci-run")
+    test_config = pytester.parseconfig(
+        "--ibutsu", "archive", "--ibutsu-project", "test-project"
+    )
+    plugin = IbutsuPlugin.from_config(test_config)
+    assert plugin.ibutsu_source == "my-ci-run"
+
+
+def test_ibutsu_source_cli_overrides_env(
+    isolate_ibutsu_env_vars: None,
+    pytester: pytest.Pytester,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Test --ibutsu-source takes precedence over IBUTSU_SOURCE when both are set."""
+    monkeypatch.setenv("IBUTSU_SOURCE", "env-source-value")
+    test_config = pytester.parseconfig(
+        "--ibutsu",
+        "archive",
+        "--ibutsu-project",
+        "test-project",
+        "--ibutsu-source",
+        "cli-source-value",
+    )
+    plugin = IbutsuPlugin.from_config(test_config)
+    assert plugin.ibutsu_source == "cli-source-value"
+
+
 def test_ibutsu_data_single_pair(
     isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
 ):
