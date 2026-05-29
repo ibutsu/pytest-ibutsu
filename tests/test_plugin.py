@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from datetime import timezone
 from typing import Generator
+from unittest.mock import MagicMock, patch
 
 import pytest
 from jose import jwt
@@ -34,6 +35,7 @@ def isolate_ibutsu_env_vars(
         "IBUTSU_DATA",
         "IBUTSU_CA_BUNDLE",
         "IBUTSU_ENV_ID",
+        "IBUTSU_SERVER_URL",
         # Also include related AWS/S3 variables that might affect tests
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
@@ -321,3 +323,137 @@ def test_ibutsu_data_cli_overrides_environment(
     plugin = IbutsuPlugin.from_config(test_config)
     # CLI should override environment
     assert plugin.extra_data == {"cli_key": "cli_value"}
+
+
+class TestProjectUuid:
+    """Tests for the project_uuid cached_property."""
+
+    def test_project_uuid_already_valid_uuid(
+        self, isolate_ibutsu_env_vars: None, pytester: pytest.Pytester
+    ):
+        """If project is already a UUID, return it directly without querying server."""
+        test_config = pytester.parseconfig(
+            "--ibutsu", "s3", "--ibutsu-project", "12345678-1234-1234-1234-123456789abc"
+        )
+        plugin = IbutsuPlugin.from_config(test_config)
+        assert plugin.project_uuid == "12345678-1234-1234-1234-123456789abc"
+
+    def test_project_uuid_s3_mode_no_server_url_returns_name(
+        self,
+        isolate_ibutsu_env_vars: None,
+        pytester: pytest.Pytester,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """In S3 mode with no IBUTSU_SERVER_URL, falls back to project name."""
+        monkeypatch.delenv("IBUTSU_SERVER_URL", raising=False)
+        test_config = pytester.parseconfig(
+            "--ibutsu", "s3", "--ibutsu-project", "insights-qe"
+        )
+        plugin = IbutsuPlugin.from_config(test_config)
+        assert plugin.project_uuid == "insights-qe"
+
+    @patch("pytest_ibutsu.pytest_plugin.ProjectApi")
+    @patch("pytest_ibutsu.pytest_plugin.ApiClient")
+    @patch("pytest_ibutsu.pytest_plugin.create_api_configuration")
+    def test_project_uuid_s3_mode_resolves_with_server_url(
+        self,
+        mock_create_config,
+        mock_api_client,
+        mock_project_api_cls,
+        isolate_ibutsu_env_vars: None,
+        pytester: pytest.Pytester,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """In S3 mode with IBUTSU_SERVER_URL set, resolves project name to UUID."""
+        monkeypatch.setenv("IBUTSU_SERVER_URL", "https://ibutsu-api.example.com")
+        test_config = pytester.parseconfig(
+            "--ibutsu", "s3", "--ibutsu-project", "insights-qe"
+        )
+        plugin = IbutsuPlugin.from_config(test_config)
+
+        mock_response = MagicMock()
+        mock_response.projects = [MagicMock(id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")]
+        mock_project_api_cls.return_value.get_project_list.return_value = mock_response
+
+        assert plugin.project_uuid == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        mock_create_config.assert_called_once_with(
+            "https://ibutsu-api.example.com", None, use_ssl_ca_cert=False
+        )
+
+    @patch("pytest_ibutsu.pytest_plugin.ProjectApi")
+    @patch("pytest_ibutsu.pytest_plugin.ApiClient")
+    @patch("pytest_ibutsu.pytest_plugin.create_api_configuration")
+    def test_project_uuid_server_mode_resolves_name(
+        self,
+        mock_create_config,
+        mock_api_client,
+        mock_project_api_cls,
+        isolate_ibutsu_env_vars: None,
+        pytester: pytest.Pytester,
+    ):
+        """In server mode, resolves project name to UUID using the server URL."""
+        test_config = pytester.parseconfig(
+            "--ibutsu",
+            "https://ibutsu-api.example.com",
+            "--ibutsu-project",
+            "insights-qe",
+        )
+        plugin = IbutsuPlugin.from_config(test_config)
+
+        mock_response = MagicMock()
+        mock_response.projects = [MagicMock(id="11111111-2222-3333-4444-555555555555")]
+        mock_project_api_cls.return_value.get_project_list.return_value = mock_response
+
+        assert plugin.project_uuid == "11111111-2222-3333-4444-555555555555"
+
+    @patch("pytest_ibutsu.pytest_plugin.ProjectApi")
+    @patch("pytest_ibutsu.pytest_plugin.ApiClient")
+    @patch("pytest_ibutsu.pytest_plugin.create_api_configuration")
+    def test_project_uuid_server_returns_empty_list_falls_back(
+        self,
+        mock_create_config,
+        mock_api_client,
+        mock_project_api_cls,
+        isolate_ibutsu_env_vars: None,
+        pytester: pytest.Pytester,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """When server returns no matching projects, falls back to project name."""
+        monkeypatch.setenv("IBUTSU_SERVER_URL", "https://ibutsu-api.example.com")
+        test_config = pytester.parseconfig(
+            "--ibutsu", "s3", "--ibutsu-project", "nonexistent-project"
+        )
+        plugin = IbutsuPlugin.from_config(test_config)
+
+        mock_response = MagicMock()
+        mock_response.projects = []
+        mock_project_api_cls.return_value.get_project_list.return_value = mock_response
+
+        assert plugin.project_uuid == "nonexistent-project"
+
+    @patch("pytest_ibutsu.pytest_plugin.ProjectApi")
+    @patch("pytest_ibutsu.pytest_plugin.ApiClient")
+    @patch("pytest_ibutsu.pytest_plugin.create_api_configuration")
+    def test_project_uuid_not_found_exception_falls_back(
+        self,
+        mock_create_config,
+        mock_api_client,
+        mock_project_api_cls,
+        isolate_ibutsu_env_vars: None,
+        pytester: pytest.Pytester,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """When server returns 404 NotFoundException, falls back to project name."""
+        from ibutsu_client.exceptions import NotFoundException
+
+        monkeypatch.setenv("IBUTSU_SERVER_URL", "https://ibutsu-api.example.com")
+        test_config = pytester.parseconfig(
+            "--ibutsu", "s3", "--ibutsu-project", "deleted-project"
+        )
+        plugin = IbutsuPlugin.from_config(test_config)
+
+        mock_project_api_cls.return_value.get_project_list.side_effect = (
+            NotFoundException(status=404, reason="Not Found")
+        )
+
+        assert plugin.project_uuid == "deleted-project"

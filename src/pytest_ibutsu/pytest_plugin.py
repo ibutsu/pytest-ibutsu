@@ -132,30 +132,33 @@ class IbutsuPlugin:
     @cached_property
     def project_uuid(self) -> str:
         """Return the ibutsu project value as a UUID.
-        If mode is upload and the `ibutsu_project` is a name, query the server to get the UUID.
+        If the project value is a name (not a UUID), query the Ibutsu server to resolve it.
+        Uses self.ibutsu_server in server mode, or IBUTSU_SERVER_URL env var otherwise.
         """
         project_value = self.ibutsu_project
-
-        if not self.is_server_mode:
-            return project_value
 
         if validate_uuid_string(project_value):
             return project_value
 
-        # Query the Ibutsu server to get the UUID
-        logger.info(f"Using server: {self.ibutsu_server}")
+        server_url = self.ibutsu_server or os.environ.get("IBUTSU_SERVER_URL", "")
+        if not server_url:
+            logger.warning(
+                f"Cannot resolve project name '{project_value}' to UUID: "
+                "no server URL available. Set IBUTSU_SERVER_URL env var."
+            )
+            return project_value
+
+        logger.info(f"Using server: {server_url}")
 
         config = create_api_configuration(
-            self.ibutsu_server, self.ibutsu_token, use_ssl_ca_cert=False
+            server_url, self.ibutsu_token, use_ssl_ca_cert=False
         )
         project_api = ProjectApi(ApiClient(config))
 
         try:
             response = project_api.get_project_list(filter=[f"name={project_value}"])
         except NotFoundException:
-            logger.warning(
-                f"Could not find '{project_value}' on '{self.ibutsu_server}' (404)."
-            )
+            logger.warning(f"Could not find '{project_value}' on '{server_url}' (404).")
             return project_value
 
         if response.projects and len(response.projects) > 0:
