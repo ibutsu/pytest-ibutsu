@@ -7,12 +7,12 @@ break functionality.
 
 import json
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
 from ibutsu_client.models.result import Result as ClientResult
 from ibutsu_client.models.run import Run as ClientRun
+from pydantic import ValidationError
 
 
 class TestPydanticV2FieldValidators:
@@ -220,10 +220,10 @@ class TestUUIDImportConsolidation:
     def test_all_models_can_be_imported(self):
         """Test that all client models can be imported successfully."""
         # This tests that the UUID import consolidation doesn't break imports
+        from ibutsu_client.models.artifact import Artifact
+        from ibutsu_client.models.project import Project
         from ibutsu_client.models.result import Result
         from ibutsu_client.models.run import Run
-        from ibutsu_client.models.project import Project
-        from ibutsu_client.models.artifact import Artifact
 
         # Should be able to instantiate basic instances
         models_to_test = [
@@ -237,29 +237,35 @@ class TestUUIDImportConsolidation:
             try:
                 instance = model_class(**kwargs)
                 assert instance is not None
-            except Exception as e:
+            except (ValidationError, TypeError, ValueError) as e:
                 pytest.fail(f"Failed to instantiate {model_class.__name__}: {e}")
 
     @pytest.mark.parametrize(
         "model_class,kwargs",
         [
             (
-                lambda: __import__(
-                    "ibutsu_client.models.result", fromlist=["Result"]
-                ).Result,
+                lambda: (
+                    __import__(
+                        "ibutsu_client.models.result", fromlist=["Result"]
+                    ).Result
+                ),
                 {"test_id": "test"},
             ),
             (lambda: __import__("ibutsu_client.models.run", fromlist=["Run"]).Run, {}),
             (
-                lambda: __import__(
-                    "ibutsu_client.models.project", fromlist=["Project"]
-                ).Project,
+                lambda: (
+                    __import__(
+                        "ibutsu_client.models.project", fromlist=["Project"]
+                    ).Project
+                ),
                 {"name": "test_project"},
             ),
             (
-                lambda: __import__(
-                    "ibutsu_client.models.artifact", fromlist=["Artifact"]
-                ).Artifact,
+                lambda: (
+                    __import__(
+                        "ibutsu_client.models.artifact", fromlist=["Artifact"]
+                    ).Artifact
+                ),
                 {},
             ),
         ],
@@ -270,7 +276,7 @@ class TestUUIDImportConsolidation:
         try:
             instance = model_cls(**kwargs)
             assert instance is not None
-        except Exception as e:
+        except (ValidationError, TypeError, ValueError) as e:
             pytest.fail(f"Failed to instantiate {model_cls.__name__}: {e}")
 
 

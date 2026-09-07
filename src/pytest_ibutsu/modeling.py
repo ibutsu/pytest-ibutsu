@@ -1,22 +1,19 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
-import uuid
-import logging
-from datetime import datetime, UTC
-from typing import Any
-from typing import ClassVar
-from typing import Mapping
-from typing import TypedDict
 import types
-
-from cattrs.preconf.json import make_converter as make_json_converter
-from cattrs.gen import make_dict_unstructure_fn, override
-from attrs import has, fields
-import pytest
+import uuid
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from typing import Any, ClassVar, TypedDict, cast
 
 import attrs
+import pytest
+from attrs import fields, has
+from cattrs.gen import make_dict_unstructure_fn, override
+from cattrs.preconf.json import make_converter as make_json_converter
 from pytest import ExceptionInfo
 
 log = logging.getLogger(__name__)
@@ -218,8 +215,8 @@ class IbutsuTestResult:
             return {p: get_name(v) for p, v in params}
         except AttributeError:
             return {}
-        except Exception as e:
-            log.debug("%s %s", item, e)
+        except Exception:
+            log.exception("Error getting item params for %s", item)
             return {}
 
     @staticmethod
@@ -435,10 +432,12 @@ def _simple_unstructure_hook(obj: Any) -> str:
         return str(obj)
 
     except Exception:
+        log.exception("Failed to convert object to string using str()")
         # If accessing class name fails, try repr() as fallback
         try:
             return repr(obj)
         except Exception:
+            log.exception("Failed to convert object to string using repr()")
             # Absolute last resort - use object id
             return f"<object at {hex(id(obj))}>"
 
@@ -538,7 +537,9 @@ def _configure_converter(converter: Any) -> None:
         if not hasattr(cls, "__name__") or "|" in str(cls):
             return False
         # Catch custom classes that define __str__
-        return hasattr(cls, "__str__") and getattr(cls, "__str__") is not object.__str__
+        return (
+            hasattr(cls, "__str__") and cast(object, cls.__str__) is not object.__str__
+        )
 
     converter.register_unstructure_hook_factory(
         _is_custom_class_instance, lambda cls: _simple_unstructure_hook

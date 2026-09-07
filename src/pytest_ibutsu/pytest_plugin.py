@@ -9,15 +9,14 @@ import re
 import tarfile
 import uuid
 from base64 import urlsafe_b64decode
-from datetime import datetime, UTC
-from datetime import timezone
+from collections.abc import Generator, Iterator
+from datetime import UTC, datetime
 from functools import cached_property
 from pathlib import Path
-from typing import Generator, Any, TYPE_CHECKING
-from typing import Iterator
+from typing import TYPE_CHECKING, Any
 
-from ibutsu_client.api_client import ApiClient
 from ibutsu_client.api.project_api import ProjectApi
+from ibutsu_client.api_client import ApiClient
 from ibutsu_client.exceptions import NotFoundException
 
 from .api_config import create_api_configuration  # Local import
@@ -30,7 +29,6 @@ import pytest
 from .archiver import dump_to_archive
 from .modeling import IbutsuTestResult, IbutsuTestRun, validate_uuid_string
 from .sender import send_data_to_ibutsu
-from .s3_uploader import upload_to_s3
 
 if TYPE_CHECKING:
     import xdist.workermanage
@@ -181,8 +179,8 @@ class IbutsuPlugin:
         if len(payload) % 4 != 0:
             payload += "=" * (4 - (len(payload) % 4))
         payload_dict = json.loads(urlsafe_b64decode(payload))
-        expires = datetime.fromtimestamp(payload_dict["exp"], tz=timezone.utc)
-        return datetime.now(tz=timezone.utc) > expires
+        expires = datetime.fromtimestamp(payload_dict["exp"], tz=UTC)
+        return datetime.now(tz=UTC) > expires
 
     @staticmethod
     def _parse_data_option(data_list: list[str]) -> dict[str, Any]:
@@ -464,6 +462,8 @@ class IbutsuPlugin:
 
         if self.is_s3_mode:
             # S3 mode: upload archive to S3
+            from .s3_uploader import upload_to_s3
+
             upload_to_s3(ibutsu_plugin=self)
         elif self.is_server_mode:
             # Server mode: send directly to Ibutsu API

@@ -2,29 +2,27 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from functools import cached_property
-from http.client import BadStatusLine
-from http.client import RemoteDisconnected
+from http.client import BadStatusLine, RemoteDisconnected
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, cast, Any
-from typing import TypeVar, ParamSpec
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
-from ibutsu_client.api_client import ApiClient
-from ibutsu_client.exceptions import ApiException, ApiValueError
 from ibutsu_client.api.artifact_api import ArtifactApi
 from ibutsu_client.api.health_api import HealthApi
 from ibutsu_client.api.result_api import ResultApi
 from ibutsu_client.api.run_api import RunApi
+from ibutsu_client.api_client import ApiClient
+from ibutsu_client.exceptions import ApiException, ApiValueError
+from urllib3.exceptions import (
+    ConnectTimeoutError,
+    MaxRetryError,
+    NewConnectionError,
+    ProtocolError,
+)
 
 from .api_config import create_api_configuration  # Local import
-from urllib3.exceptions import MaxRetryError
-from urllib3.exceptions import ProtocolError
-from urllib3.exceptions import NewConnectionError
-from urllib3.exceptions import ConnectTimeoutError
-
-from .modeling import IbutsuTestResult
-from .modeling import IbutsuTestRun
-
+from .modeling import IbutsuTestResult, IbutsuTestRun
 
 if TYPE_CHECKING:
     from .pytest_plugin import IbutsuPlugin
@@ -276,7 +274,7 @@ class IbutsuSender:
                         time.sleep(delay)
                     else:
                         logger.exception(
-                            f"Network error (final attempt {retries}/{MAX_CALL_RETRIES}): {e.__class__.__name__}: {e}. "
+                            f"Network error (final attempt {retries}/{MAX_CALL_RETRIES})"
                         )
                         raise TooManyRetriesError(
                             f"Too many retries ({MAX_CALL_RETRIES}) while trying to call API"

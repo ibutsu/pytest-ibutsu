@@ -4,11 +4,13 @@ import json
 import re
 import tarfile
 import uuid
-import pytest
 from collections import namedtuple
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator, Any
+from typing import Any
 from unittest.mock import Mock, patch
+
+import pytest
 
 from pytest_ibutsu.archiver import IbutsuArchiver, dump_to_archive
 from pytest_ibutsu.modeling import IbutsuTestResult, IbutsuTestRun
@@ -368,18 +370,19 @@ class TestIbutsuArchiverExtended:
 
         archiver = IbutsuArchiver(archive_name)
 
-        with archiver:
-            # Mock cattrs converter to raise an exception
-            with patch(
+        with (
+            archiver,
+            patch(
                 "pytest_ibutsu.archiver.ibutsu_converter.unstructure"
-            ) as mock_unstructure:
-                mock_unstructure.side_effect = TypeError("Cattrs failed")
+            ) as mock_unstructure,
+        ):
+            mock_unstructure.side_effect = TypeError("Cattrs failed")
 
-                # Call the appropriate method
-                getattr(archiver, method)(*args)
+            # Call the appropriate method
+            getattr(archiver, method)(*args)
 
-                # Verify fallback was used
-                assert mock_unstructure.called
+            # Verify fallback was used
+            assert mock_unstructure.called
 
     def test_complete_serialization_failure(self, archive_name, archiver_test_data):
         """Test complete serialization failure for both cattrs and to_dict."""
@@ -407,15 +410,16 @@ class TestIbutsuArchiverExtended:
             expected_error_field = "run_id"
 
         # Test with a completed archive - create and then read
-        with IbutsuArchiver(archive_name) as archiver:
-            # Mock cattrs converter to raise an exception
-            with patch(
+        with (
+            IbutsuArchiver(archive_name) as archiver,
+            patch(
                 "pytest_ibutsu.archiver.ibutsu_converter.unstructure"
-            ) as mock_unstructure:
-                mock_unstructure.side_effect = TypeError("Cattrs failed")
+            ) as mock_unstructure,
+        ):
+            mock_unstructure.side_effect = TypeError("Cattrs failed")
 
-                # Call the appropriate method - should not raise but create fallback content
-                getattr(archiver, method)(*args)
+            # Call the appropriate method - should not raise but create fallback content
+            getattr(archiver, method)(*args)
 
         # Now read the archive to verify error content was created
         with tarfile.open(f"{archive_name}.tar.gz", "r:gz") as tar:

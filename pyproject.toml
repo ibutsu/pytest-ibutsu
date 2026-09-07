@@ -91,6 +91,9 @@ python = ["3.11", "3.12", "3.13"]
 [tool.uv]
 default-groups = ["test"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/example_test_to_report_to_ibutsu.py" = ["TRY002"]
+
 [tool.mypy]
 # Enable strict mode for maximum type safety
 strict = true
@@ -105,7 +108,7 @@ no_implicit_reexport = true
 
 # Override for third-party libraries
 [[tool.mypy.overrides]]
-module = ["ibutsu_client.*"]
+module = ["ibutsu_client.*", "boto3.*", "botocore.*"]
 ignore_missing_imports = true
 follow_untyped_imports = true
 

@@ -1,8 +1,8 @@
-from typing import Iterator
+from collections.abc import Iterator
 
 import pytest
-from pytest_ibutsu.pytest_plugin import ibutsu_plugin_key
-from pytest_ibutsu.pytest_plugin import ibutsu_result_key
+
+from pytest_ibutsu.pytest_plugin import ibutsu_plugin_key, ibutsu_result_key
 
 
 class ExampleClassForMetadata:

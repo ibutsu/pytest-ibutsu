@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import boto3
 from botocore.exceptions import ClientError
@@ -16,10 +16,44 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def sync_botocore_ssl_context() -> None:
+    """Synchronize botocore's SSLContext with the current active ssl.SSLContext.
+
+    When truststore.inject_into_ssl() is called after botocore.httpsession has
+    already been imported, botocore retains a cached reference to the unpatched
+    stdlib SSLContext. In Python 3.12+, botocore's create_urllib3_context() triggers
+    an infinite recursion error in ssl.py's property setter:
+    super(SSLContext, SSLContext).options.__set__(self, value).
+
+    Synchronizing botocore.httpsession.SSLContext with ssl.SSLContext ensures
+    botocore seamlessly uses truststore without triggering recursion or requiring
+    external workarounds.
+    """
+    try:
+        import ssl
+
+        import botocore.httpsession
+
+        current_ctx = getattr(botocore.httpsession, "SSLContext", None)
+        if current_ctx is not None and current_ctx is not ssl.SSLContext:
+            botocore.httpsession.SSLContext = ssl.SSLContext  # type: ignore[attr-defined,assignment]
+    except Exception:
+        logger.debug(
+            "Failed to sync botocore SSLContext with ssl.SSLContext", exc_info=True
+        )
+
+
+# Ensure botocore uses active SSLContext upon module import
+sync_botocore_ssl_context()
+
+
 class S3Uploader:
     """Handles uploading artifacts to Amazon S3 bucket."""
 
     def __init__(self, bucket_name: str | None = None, timeout: int = 180) -> None:
+        # Ensure botocore uses active SSLContext (e.g., truststore support)
+        sync_botocore_ssl_context()
+
         self.bucket_name = bucket_name or os.getenv("AWS_BUCKET")
         if not self.bucket_name:
             raise ValueError(
@@ -34,7 +68,7 @@ class S3Uploader:
         # - AWS credentials file
         # - EC2 instance profile
         # - AWS IAM role
-        self.s3_client: Any = boto3.client("s3")
+        self.s3_client: Any = boto3.client("s3")  # type: ignore[no-untyped-call]
         assert self.s3_client is not None
 
     def find_uuid_tar_gz_files(self, directory: str = ".") -> list[Path]:
@@ -81,7 +115,7 @@ class S3Uploader:
             if isinstance(e, ClientError) and e.response["Error"]["Code"] == "404":
                 return False
             # For other errors, log and return False to be safe
-            logger.warning(f"Error checking S3 file existence for {key}: {e}")
+            logger.exception("Error checking S3 file existence for %s", key)
             return False
 
     def upload_file(self, file_path: Path, key: str | None = None) -> str | None:
@@ -182,6 +216,6 @@ def upload_to_s3(
     except Exception as e:
         if ibutsu_plugin:
             ibutsu_plugin.summary_info["s3_upload_errors"] = 1
-            ibutsu_plugin.summary_info["errors"].append(f"S3 upload error: {str(e)}")
+            ibutsu_plugin.summary_info["errors"].append(f"S3 upload error: {e!s}")
         # Keep the exception logging for debugging purposes if needed
         logger.exception("Error processing archives for upload:")

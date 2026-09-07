@@ -1,8 +1,8 @@
 import pytest
 
-from pytest_ibutsu.modeling import Summary
 from pytest_ibutsu.modeling import IbutsuTestResult as TResult
 from pytest_ibutsu.modeling import IbutsuTestRun as TRun
+from pytest_ibutsu.modeling import Summary
 
 
 def test_summary_increment():

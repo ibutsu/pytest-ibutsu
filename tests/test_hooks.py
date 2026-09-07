@@ -7,9 +7,9 @@ from unittest.mock import Mock
 import pytest
 
 from pytest_ibutsu.pytest_plugin import (
+    ibutsu_plugin_key,
     pytest_report_header,
     pytest_terminal_summary,
-    ibutsu_plugin_key,
 )
 
 pytest_plugins = "pytester"
@@ -120,10 +120,8 @@ class TestReportHeader:
         """Test report header for archive mode."""
 
         # Update the stash config to use our mock plugin
-        mock_stash_config.stash.__getitem__ = (
-            lambda self, key: mock_terminal_summary_plugin
-            if key == ibutsu_plugin_key
-            else None
+        mock_stash_config.stash.__getitem__ = lambda self, key: (
+            mock_terminal_summary_plugin if key == ibutsu_plugin_key else None
         )
         mock_stash_config.getoption.return_value = "archive"
         config = mock_stash_config
@@ -163,10 +161,8 @@ class TestReportHeader:
         monkeypatch.setenv("AWS_BUCKET", "test-bucket")
 
         # Update the stash config to use our mock plugin
-        mock_stash_config.stash.__getitem__ = (
-            lambda self, key: mock_terminal_summary_plugin
-            if key == ibutsu_plugin_key
-            else None
+        mock_stash_config.stash.__getitem__ = lambda self, key: (
+            mock_terminal_summary_plugin if key == ibutsu_plugin_key else None
         )
         mock_stash_config.getoption.return_value = "s3"
         config = mock_stash_config
@@ -210,10 +206,8 @@ class TestReportHeader:
         mock_terminal_summary_plugin.ibutsu_no_archive = False
 
         # Update the stash config to use our mock plugin
-        mock_stash_config.stash.__getitem__ = (
-            lambda self, key: mock_terminal_summary_plugin
-            if key == ibutsu_plugin_key
-            else None
+        mock_stash_config.stash.__getitem__ = lambda self, key: (
+            mock_terminal_summary_plugin if key == ibutsu_plugin_key else None
         )
         mock_stash_config.getoption.return_value = "https://ibutsu.example.com/api"
         config = mock_stash_config
@@ -260,10 +254,8 @@ class TestReportHeader:
         mock_terminal_summary_plugin.ibutsu_no_archive = True
 
         # Update the stash config to use our mock plugin
-        mock_stash_config.stash.__getitem__ = (
-            lambda self, key: mock_terminal_summary_plugin
-            if key == ibutsu_plugin_key
-            else None
+        mock_stash_config.stash.__getitem__ = lambda self, key: (
+            mock_terminal_summary_plugin if key == ibutsu_plugin_key else None
         )
         mock_stash_config.getoption.return_value = "https://ibutsu.example.com/api"
         config = mock_stash_config
@@ -293,7 +285,6 @@ class TestTerminalSummary:
         def mock_stash_getitem(self, key):
             if key == ibutsu_plugin_key:
                 raise KeyError()
-            return None
 
         config.stash.__getitem__ = mock_stash_getitem
 
@@ -318,8 +309,8 @@ class TestTerminalSummary:
     ):
         """Test terminal summary when plugin exists but is not enabled."""
         # Update the stash config to use our mock plugin
-        mock_stash_config.stash.__getitem__ = (
-            lambda self, key: mock_ibutsu_plugin if key == ibutsu_plugin_key else None
+        mock_stash_config.stash.__getitem__ = lambda self, key: (
+            mock_ibutsu_plugin if key == ibutsu_plugin_key else None
         )
         config = mock_stash_config
 
@@ -340,8 +331,8 @@ class TestTerminalSummary:
     ):
         """Test terminal summary when no operations were performed."""
         # Update the stash config to use our mock plugin
-        mock_stash_config.stash.__getitem__ = (
-            lambda self, key: mock_ibutsu_plugin if key == ibutsu_plugin_key else None
+        mock_stash_config.stash.__getitem__ = lambda self, key: (
+            mock_ibutsu_plugin if key == ibutsu_plugin_key else None
         )
         config = mock_stash_config
 
@@ -382,10 +373,8 @@ class TestTerminalSummary:
     ):
         """Test terminal summary when archive was created."""
         # Update the stash config to use our mock plugin
-        mock_stash_config.stash.__getitem__ = (
-            lambda self, key: mock_terminal_summary_plugin
-            if key == ibutsu_plugin_key
-            else None
+        mock_stash_config.stash.__getitem__ = lambda self, key: (
+            mock_terminal_summary_plugin if key == ibutsu_plugin_key else None
         )
         config = mock_stash_config
 
