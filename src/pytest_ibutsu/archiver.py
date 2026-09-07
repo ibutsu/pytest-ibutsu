@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import json
 import logging
 import tarfile
 import time
-import json
 from contextlib import AbstractContextManager
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Self
 
 if TYPE_CHECKING:
     from .pytest_plugin import IbutsuPlugin
@@ -60,12 +60,10 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
             unstructured_data = ibutsu_converter.unstructure(obj)
             # Use standard JSON since data is already unstructured
             content = json.dumps(unstructured_data).encode("utf-8")
-        except Exception as e:
+        except Exception:
             # Last resort: log the error and use error representation
             obj_id = obj.id
-            logger.exception(
-                f"Failed to serialize {obj.__class__.__name__} {obj_id}: {e}"
-            )
+            logger.exception(f"Failed to serialize {obj.__class__.__name__} {obj_id}")
 
             id_key = "result_id" if isinstance(obj, IbutsuTestResult) else "run_id"
             content = json.dumps(
@@ -92,11 +90,11 @@ class IbutsuArchiver(AbstractContextManager["IbutsuArchiver"]):
         self.add_dir(base_path)
         self._serialize_add_artifacts(run, base_path, "run.json")
 
-    def __enter__(self) -> IbutsuArchiver:
+    def __enter__(self) -> Self:  # pragma: no cover
         self.tar = tarfile.open(f"{self.name}.tar.gz", "w:gz")
         return self
 
-    def __exit__(self, *exc_details: Any) -> None:
+    def __exit__(self, *exc_details: object) -> None:  # pragma: no cover
         self.tar.close()
 
 

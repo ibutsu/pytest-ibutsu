@@ -1,23 +1,26 @@
 """Comprehensive tests for the modeling module."""
 
+import json
+import logging
 import time
 import uuid
 from datetime import datetime
 from unittest.mock import Mock
 
 import attrs
-import json
 import pytest
 
 from pytest_ibutsu.modeling import (
-    validate_uuid_string,
+    IbutsuTestResult,
+    IbutsuTestRun,
+    ItemMarker,
+    Summary,
     _simple_unstructure_hook,
     ibutsu_converter,
-    Summary,
-    IbutsuTestRun,
-    IbutsuTestResult,
-    ItemMarker,
+    validate_uuid_string,
 )
+
+log = logging.getLogger(__name__)
 
 
 class TestItemMarker:
@@ -365,7 +368,7 @@ class TestSerializationIntegration:
                 json_result = json.dumps({"obj": unstructured})
                 assert isinstance(json_result, str)
                 assert len(json_result) > 0
-            except Exception as e:
+            except (TypeError, ValueError) as e:
                 pytest.fail(
                     f"Failed to JSON serialize cattrs unstructured {type(obj).__name__}: {e}"
                 )
@@ -436,6 +439,7 @@ class TestSerializationIntegration:
             # Verify normal values are preserved
             assert unstructured["user_properties"]["normal"] == "string"
         except Exception as e:
+            log.exception("Failed to unstructure complex nested structure with cattrs")
             pytest.fail(
                 f"Failed to unstructure complex nested structure with cattrs: {e}"
             )
@@ -450,7 +454,7 @@ class TestSerializationIntegration:
         result_dict = run.to_dict()
 
         # Should not have private attributes
-        assert not any(k.startswith("_") for k in result_dict.keys())
+        assert not any(k.startswith("_") for k in result_dict)
 
         # Should have public attributes
         assert "component" in result_dict
@@ -474,7 +478,7 @@ class TestSerializationIntegration:
         result_dict = result.to_dict()
 
         # Should not have private attributes
-        assert not any(k.startswith("_") for k in result_dict.keys())
+        assert not any(k.startswith("_") for k in result_dict)
 
         # Should have public attributes
         assert "test_id" in result_dict
@@ -900,7 +904,7 @@ class TestIbutsuTestRun:
         assert run._start_unix_time >= start_time
         assert run.start_time != ""
         # Should be a valid ISO format datetime
-        datetime.fromisoformat(run.start_time.replace("Z", "+00:00"))
+        datetime.fromisoformat(run.start_time)
 
     def test_testrun_set_duration(self):
         """Test set_duration method."""
@@ -1319,6 +1323,17 @@ class TestIbutsuTestResult:
         params = IbutsuTestResult._get_item_params(mock_item)
 
         assert params == {}
+
+    def test_testresult_get_item_params_generic_exception(self, caplog):
+        """Test _get_item_params with generic exception logs via log.exception."""
+        mock_item = Mock()
+        mock_item.callspec.params.items.side_effect = RuntimeError("Item param error")
+
+        with caplog.at_level(logging.ERROR):
+            params = IbutsuTestResult._get_item_params(mock_item)
+
+        assert params == {}
+        assert "Error getting item params for" in caplog.text
 
     def test_testresult_get_item_fspath(self):
         """Test _get_item_fspath static method."""
@@ -1760,14 +1775,9 @@ class TestConverterEdgeCases:
 
         # Should not raise an exception
         obj = ProblematicClass()
-        try:
-            result = ibutsu_converter.unstructure(obj)
-            # The converter should handle this somehow
-            assert result is not None
-        except Exception:
-            # If it does raise, that's also acceptable behavior
-            # as long as it's a known issue
-            pass
+        result = ibutsu_converter.unstructure(obj)
+        # The converter should handle this somehow
+        assert result is not None
 
 
 class TestConverterFactoryHooks:
@@ -1802,11 +1812,12 @@ class TestConverterFactoryHooks:
 
     def test_create_attrs_unstructure_hook_factory(self):
         """Test _create_attrs_unstructure_hook_factory."""
+        import attrs
+
         from pytest_ibutsu.modeling import (
             _create_attrs_unstructure_hook_factory,
             ibutsu_converter,
         )
-        import attrs
 
         @attrs.define
         class TestClass:
@@ -1824,8 +1835,9 @@ class TestConverterFactoryHooks:
 
     def test_configure_converter_registers_hooks(self):
         """Test that _configure_converter registers all necessary hooks."""
-        from pytest_ibutsu.modeling import _configure_converter
         from cattrs.preconf.json import make_converter as make_json_converter
+
+        from pytest_ibutsu.modeling import _configure_converter
 
         # Create a new converter and configure it
         test_converter = make_json_converter()
@@ -1856,19 +1868,21 @@ class TestConverterFactoryHooks:
 class TestSimpleUnstructureHookEdgeCases:
     """Test _simple_unstructure_hook edge cases."""
 
-    def test_simple_unstructure_hook_with_exception_in_str(self):
+    def test_simple_unstructure_hook_with_exception_in_str(self, caplog):
         """Test _simple_unstructure_hook when str() raises exception."""
 
         class BadStr:
             def __str__(self):
                 raise RuntimeError("Cannot convert to string")
 
-        result = _simple_unstructure_hook(BadStr())
+        with caplog.at_level(logging.ERROR):
+            result = _simple_unstructure_hook(BadStr())
         # Should fall back to repr or object representation
         assert isinstance(result, str)
         assert len(result) > 0
+        assert "Failed to convert object to string using str()" in caplog.text
 
-    def test_simple_unstructure_hook_with_exception_in_repr(self):
+    def test_simple_unstructure_hook_with_exception_in_repr(self, caplog):
         """Test _simple_unstructure_hook when both str() and repr() raise exceptions."""
 
         class BadBoth:
@@ -1878,10 +1892,13 @@ class TestSimpleUnstructureHookEdgeCases:
             def __repr__(self):
                 raise RuntimeError("Cannot get repr")
 
-        result = _simple_unstructure_hook(BadBoth())
+        with caplog.at_level(logging.ERROR):
+            result = _simple_unstructure_hook(BadBoth())
         # Should fall back to object id
         assert isinstance(result, str)
         assert "<object at 0x" in result
+        assert "Failed to convert object to string using str()" in caplog.text
+        assert "Failed to convert object to string using repr()" in caplog.text
 
     def test_is_non_serializable_type_property(self):
         """Test _is_non_serializable_type with property."""

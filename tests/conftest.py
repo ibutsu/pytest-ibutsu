@@ -9,14 +9,15 @@ It also provides fixtures for creating mock objects consistently across tests,
 migrated from test_utils.py to enable parametrization and broader application.
 """
 
-import pytest
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, UTC
 from unittest.mock import Mock
 
-from pytest_ibutsu.s3_uploader import S3Uploader
+import pytest
+
 from pytest_ibutsu.modeling import IbutsuTestRun
+from pytest_ibutsu.s3_uploader import S3Uploader
 
 
 @pytest.fixture(scope="session")

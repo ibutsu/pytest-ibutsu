@@ -1,12 +1,11 @@
 import os
-from datetime import datetime
-from datetime import timezone
-from typing import Generator
+from collections.abc import Generator
+from datetime import UTC, datetime
 
 import pytest
 from jose import jwt
-from pytest_ibutsu.pytest_plugin import ExpiredTokenError
-from pytest_ibutsu.pytest_plugin import IbutsuPlugin
+
+from pytest_ibutsu.pytest_plugin import ExpiredTokenError, IbutsuPlugin
 
 pytest_plugins = "pytester"
 
@@ -81,7 +80,7 @@ def test_from_config_with_project(
 def test_expired_token(isolate_ibutsu_env_vars: None, pytester: pytest.Pytester):
     """Test the ExpiredTokenError is raised when expired token is passed"""
     min_timestamp = datetime.min.replace(
-        second=0, microsecond=0, tzinfo=timezone.utc
+        second=0, microsecond=0, tzinfo=UTC
     ).timestamp()
     token = jwt.encode({"exp": min_timestamp}, "secret", algorithm="HS256")
     test_config = pytester.parseconfig(
@@ -99,7 +98,7 @@ def test_expired_token(isolate_ibutsu_env_vars: None, pytester: pytest.Pytester)
 def test_valid_token(isolate_ibutsu_env_vars: None, pytester: pytest.Pytester):
     """Test the ExpiredTokenError is NOT raised when valid token is passed"""
     max_timestamp = datetime.max.replace(
-        second=0, microsecond=0, tzinfo=timezone.utc
+        second=0, microsecond=0, tzinfo=UTC
     ).timestamp()
     token = jwt.encode({"exp": max_timestamp}, "secret", algorithm="HS256")
     test_config = pytester.parseconfig(
@@ -321,3 +320,22 @@ def test_ibutsu_data_cli_overrides_environment(
     plugin = IbutsuPlugin.from_config(test_config)
     # CLI should override environment
     assert plugin.extra_data == {"cli_key": "cli_value"}
+
+
+def test_plugin_import_does_not_import_boto3() -> None:
+    """Test that importing pytest_ibutsu.pytest_plugin does not eagerly load boto3 or botocore."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; "
+        "import pytest_ibutsu.pytest_plugin; "
+        "assert 'boto3' not in sys.modules, 'boto3 was eagerly imported'; "
+        "assert 'botocore' not in sys.modules, 'botocore was eagerly imported'"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, (
+        f"Importing pytest_plugin eagerly loaded boto: {result.stderr}"
+    )

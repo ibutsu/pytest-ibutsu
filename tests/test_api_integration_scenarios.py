@@ -7,14 +7,15 @@ after the Pydantic v2 compatibility fixes.
 
 import json
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
 import pytest
+from ibutsu_client.exceptions import ApiException
 from ibutsu_client.models.result import Result as ClientResult
 from ibutsu_client.models.run import Run as ClientRun
-from ibutsu_client.exceptions import ApiException
-from urllib3.exceptions import NewConnectionError, ConnectTimeoutError
+from pydantic import ValidationError
+from urllib3.exceptions import ConnectTimeoutError, NewConnectionError
 
 from pytest_ibutsu.modeling import IbutsuTestResult, IbutsuTestRun
 from pytest_ibutsu.sender import IbutsuSender, send_data_to_ibutsu
@@ -114,11 +115,11 @@ class TestAPIDataFlow:
         assert sender._make_call.call_count == 2
 
         # Verify the run dict from the add_run call can create a valid ClientRun
-        add_run_call = [
+        add_run_call = next(
             call
             for call in sender._make_call.call_args_list
             if call.args[0] == sender.run_api.add_run
-        ][0]
+        )
         run_dict = add_run_call.kwargs["run"]
         client_run = ClientRun(**run_dict)
 
@@ -284,7 +285,7 @@ class TestAPIErrorHandling:
         result_dict = result.to_dict()
 
         # Should fail when trying to create ClientResult
-        with pytest.raises(Exception):  # ValidationError or similar
+        with pytest.raises(ValidationError):
             ClientResult(**result_dict)
 
 

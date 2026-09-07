@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 import uuid
@@ -11,15 +12,21 @@ import pytest
 from botocore.exceptions import ClientError
 from botocore.stub import Stubber
 
-from pytest_ibutsu.s3_uploader import S3Uploader, upload_to_s3
+from pytest_ibutsu.s3_uploader import (
+    S3Uploader,
+    sync_botocore_ssl_context,
+    upload_to_s3,
+)
 
 
 class TestS3Uploader:
     def test_init_without_bucket_name(self):
         """Test S3Uploader initialization fails when no bucket name is provided."""
-        with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="AWS bucket name is required"):
-                S3Uploader()
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            pytest.raises(ValueError, match="AWS bucket name is required"),
+        ):
+            S3Uploader()
 
     def test_init_with_bucket_name(self):
         """Test S3Uploader initialization succeeds with bucket name."""
@@ -126,18 +133,35 @@ class TestS3Uploader:
         with patch.object(uploader.s3_client, "head_object", side_effect=client_error):
             assert uploader._file_exists_in_s3("non-existent-key", 1024) is False
 
+    def test_file_exists_in_s3_error(self, s3_uploader_instance, caplog):
+        """Test checking file existence when unexpected error occurs logs an exception."""
+        uploader = s3_uploader_instance
+
+        with (
+            caplog.at_level(logging.ERROR),
+            patch.object(
+                uploader.s3_client,
+                "head_object",
+                side_effect=RuntimeError("S3 connection failed"),
+            ),
+        ):
+            assert uploader._file_exists_in_s3("error-key", 1024) is False
+            assert "Error checking S3 file existence for error-key" in caplog.text
+
     def test_upload_file_skips_existing(self, s3_uploader_instance, shared_test_files):
         """Test that upload_file skips files that already exist with same size."""
         uploader = s3_uploader_instance
         temp_file_path = shared_test_files / "binary_content.bin"
 
         # Mock file exists in S3 with same size
-        with patch.object(uploader, "_file_exists_in_s3", return_value=True):
-            with patch.object(uploader.s3_client, "upload_fileobj") as mock_upload:
-                assert uploader.upload_file(temp_file_path, "test-key") is None
+        with (
+            patch.object(uploader, "_file_exists_in_s3", return_value=True),
+            patch.object(uploader.s3_client, "upload_fileobj") as mock_upload,
+        ):
+            assert uploader.upload_file(temp_file_path, "test-key") is None
 
-                # Should not call upload_fileobj since file exists
-                mock_upload.assert_not_called()
+            # Should not call upload_fileobj since file exists
+            mock_upload.assert_not_called()
 
     def test_find_uuid_tar_gz_files(self):
         """Test finding UUID.tar.gz files specifically."""
@@ -235,11 +259,13 @@ class TestS3Uploader:
 
         client_error = ClientError(error_response, "upload_fileobj")
 
-        with patch.object(
-            uploader.s3_client, "upload_fileobj", side_effect=client_error
-        ):
-            with pytest.raises(Exception):  # Generic exception for upload failures
-                uploader.upload_file(temp_file_path, "test-key")
+        with (
+            patch.object(
+                uploader.s3_client, "upload_fileobj", side_effect=client_error
+            ),
+            pytest.raises(ClientError),
+        ):  # Generic exception for upload failures
+            uploader.upload_file(temp_file_path, "test-key")
 
     def test_s3_bucket_validation_with_stubber(self):
         """Test S3 bucket validation using botocore Stubber for head_bucket operation."""
@@ -283,7 +309,9 @@ class TestS3Uploader:
         temp_file_path = tmp_path / "test_content.bin"
         temp_file_path.write_bytes(b"test content")
 
-        with pytest.raises(Exception):  # Should raise exception if s3_client is None
+        with pytest.raises(
+            AttributeError
+        ):  # Should raise exception if s3_client is None
             uploader.upload_file(temp_file_path)
 
     def test_upload_file_generic_exception(self, tmp_path):
@@ -294,13 +322,15 @@ class TestS3Uploader:
         temp_file_path.write_bytes(b"test content")
 
         # Mock upload_fileobj to raise a generic exception
-        with patch.object(
-            uploader.s3_client,
-            "upload_fileobj",
-            side_effect=ValueError("Generic error"),
-        ):
-            with pytest.raises(Exception):  # Generic upload error
-                uploader.upload_file(temp_file_path)
+        with (
+            patch.object(
+                uploader.s3_client,
+                "upload_fileobj",
+                side_effect=ValueError("Generic error"),
+            ),
+            pytest.raises(ValueError),
+        ):  # Generic upload error
+            uploader.upload_file(temp_file_path)
 
     def test_upload_artifacts_no_files_found(self):
         """Test upload_artifacts when no matching files are found."""
@@ -334,7 +364,7 @@ class TestS3Uploader:
                 if "12345678" in file_path.name:
                     return f"s3://test-bucket/{file_path.name}"
                 else:
-                    raise Exception("Simulated upload failure")
+                    raise RuntimeError("Simulated upload failure")
 
             with patch.object(
                 uploader, "upload_file", side_effect=mock_upload_side_effect
@@ -397,3 +427,123 @@ class TestUploadToS3Function:
 
         # Should not raise exception
         upload_to_s3()
+
+
+class TestSyncBotocoreSSLContext:
+    def test_sync_updates_desynchronized_ssl_context(self):
+        """Test that sync_botocore_ssl_context updates botocore when contexts differ."""
+        import ssl
+
+        import botocore.httpsession
+
+        original_botocore_ctx = getattr(botocore.httpsession, "SSLContext", None)
+        try:
+            # Create a mock/custom SSLContext to simulate truststore injection
+            class FakeInjectedSSLContext(ssl.SSLContext):
+                pass
+
+            class StaleBotocoreSSLContext(ssl.SSLContext):
+                pass
+
+            botocore.httpsession.SSLContext = StaleBotocoreSSLContext
+            with patch.object(ssl, "SSLContext", FakeInjectedSSLContext):
+                sync_botocore_ssl_context()
+                assert botocore.httpsession.SSLContext is FakeInjectedSSLContext
+        finally:
+            botocore.httpsession.SSLContext = original_botocore_ctx
+
+    def test_sync_noop_when_already_matching(self):
+        """Test that sync_botocore_ssl_context does nothing when contexts match."""
+        import ssl
+
+        import botocore.httpsession
+
+        original_botocore_ctx = getattr(botocore.httpsession, "SSLContext", None)
+        try:
+            botocore.httpsession.SSLContext = ssl.SSLContext
+            sync_botocore_ssl_context()
+            assert botocore.httpsession.SSLContext is ssl.SSLContext
+        finally:
+            botocore.httpsession.SSLContext = original_botocore_ctx
+
+    def test_sync_noop_when_botocore_ssl_context_is_none(self):
+        """Test that sync_botocore_ssl_context does not create attribute if SSLContext is None."""
+        import botocore.httpsession
+
+        original = getattr(botocore.httpsession, "SSLContext", None)
+        try:
+            if hasattr(botocore.httpsession, "SSLContext"):
+                delattr(botocore.httpsession, "SSLContext")
+            sync_botocore_ssl_context()
+            assert not hasattr(botocore.httpsession, "SSLContext")
+        finally:
+            if original is not None:
+                botocore.httpsession.SSLContext = original
+
+    def test_sync_allows_context_creation(self):
+        """Test that create_urllib3_context() successfully instantiates the synchronized context."""
+        import ssl
+
+        import botocore.httpsession
+
+        original_botocore_ctx = getattr(botocore.httpsession, "SSLContext", None)
+        try:
+
+            class DummyContext(ssl.SSLContext):
+                pass
+
+            botocore.httpsession.SSLContext = DummyContext
+            sync_botocore_ssl_context()
+            assert botocore.httpsession.SSLContext is ssl.SSLContext
+
+            ctx = botocore.httpsession.create_urllib3_context()
+            assert isinstance(ctx, ssl.SSLContext)
+        finally:
+            botocore.httpsession.SSLContext = original_botocore_ctx
+
+    def test_truststore_integration_if_available(self):
+        """If truststore is installed, verify end-to-end injection and botocore context sync."""
+        truststore = pytest.importorskip("truststore")
+        import ssl
+
+        import botocore.httpsession
+
+        original_ssl_ctx = ssl.SSLContext
+        original_botocore_ctx = getattr(botocore.httpsession, "SSLContext", None)
+        try:
+            truststore.inject_into_ssl()
+            sync_botocore_ssl_context()
+            assert botocore.httpsession.SSLContext is truststore.SSLContext
+
+            ctx = botocore.httpsession.create_urllib3_context()
+            assert isinstance(ctx, truststore.SSLContext)
+        finally:
+            ssl.SSLContext = original_ssl_ctx
+            botocore.httpsession.SSLContext = original_botocore_ctx
+
+    def test_sync_handles_exceptions_gracefully(self):
+        """Test that sync_botocore_ssl_context does not raise even on unexpected errors."""
+        with patch(
+            "pytest_ibutsu.s3_uploader.getattr", side_effect=RuntimeError("unexpected")
+        ):
+            # Should not raise
+            sync_botocore_ssl_context()
+
+    def test_uploader_init_calls_sync_botocore_ssl_context(self):
+        """Test that S3Uploader initialization invokes sync_botocore_ssl_context."""
+        with (
+            patch("pytest_ibutsu.s3_uploader.sync_botocore_ssl_context") as mock_sync,
+            patch("pytest_ibutsu.s3_uploader.boto3.client"),
+        ):
+            S3Uploader(bucket_name="my-bucket")
+            mock_sync.assert_called()
+
+    def test_uploader_init_syncs_before_bucket_validation(self):
+        """Test that S3Uploader runs sync_botocore_ssl_context even if bucket validation fails."""
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("pytest_ibutsu.s3_uploader.sync_botocore_ssl_context") as mock_sync,
+            pytest.raises(ValueError, match="AWS bucket name is required"),
+        ):
+            S3Uploader()
+        mock_sync.assert_called_once()

@@ -1,21 +1,19 @@
 """Comprehensive tests for the sender module."""
 
-from unittest.mock import Mock, patch, call
+from http.client import BadStatusLine, RemoteDisconnected
+from unittest.mock import Mock, call, patch
 
 import pytest
-from http.client import RemoteDisconnected, BadStatusLine
-from urllib3.exceptions import ProtocolError, NewConnectionError, ConnectTimeoutError
+from urllib3.exceptions import ConnectTimeoutError, NewConnectionError, ProtocolError
 
-
+from pytest_ibutsu.api_config import CA_BUNDLE_ENVS
+from pytest_ibutsu.modeling import IbutsuTestResult, IbutsuTestRun
 from pytest_ibutsu.sender import (
+    MAX_CALL_RETRIES,
+    UPLOAD_LIMIT,
     IbutsuSender,
     send_data_to_ibutsu,
-    UPLOAD_LIMIT,
-    MAX_CALL_RETRIES,
 )
-from pytest_ibutsu.api_config import CA_BUNDLE_ENVS
-from pytest_ibutsu.modeling import IbutsuTestRun, IbutsuTestResult
-
 
 pytest_plugins = "pytester"
 
@@ -354,7 +352,7 @@ class TestIbutsuSender:
         sender._upload_artifact("run-id", "run_artifact.log", content, True)
 
         sender._make_call.assert_called_once()
-        args, kwargs = sender._make_call.call_args
+        _, kwargs = sender._make_call.call_args
         assert kwargs["run_id"] == "run-id"
         assert "result_id" not in kwargs
 
@@ -383,7 +381,6 @@ class TestIbutsuSender:
 
         # Should still call the API with the string data (fallback behavior)
         sender._make_call.assert_called_once()
-        args, kwargs = sender._make_call.call_args
         # Verify the data content was captured correctly - non-existent file treated as string
         assert (
             sender._captured_data_content() == nonexistent_file
@@ -397,7 +394,6 @@ class TestIbutsuSender:
         sender._upload_artifact("result-id", "url.txt", url_content, False)
 
         sender._make_call.assert_called_once()
-        args, kwargs = sender._make_call.call_args
         # Verify the data content was captured correctly - URL treated as string
         assert (
             sender._captured_data_content() == url_content
@@ -411,7 +407,6 @@ class TestIbutsuSender:
         sender._upload_artifact("result-id", "url.txt", url_content, False)
 
         sender._make_call.assert_called_once()
-        args, kwargs = sender._make_call.call_args
         # Verify the data content was captured correctly - HTTPS URL treated as string
         assert (
             sender._captured_data_content() == url_content
@@ -532,7 +527,7 @@ class TestArtifactUploadIntegration:
         sender.upload_artifacts(result)
 
         sender._make_call.assert_called_once()
-        args, kwargs = sender._make_call.call_args
+        _, kwargs = sender._make_call.call_args
         assert kwargs["filename"] == "net.log"
         # Verify the data content was captured correctly
         assert sender._captured_data_content() == net_log_bytes
@@ -554,7 +549,7 @@ class TestArtifactUploadIntegration:
         sender.upload_artifacts(result)
 
         sender._make_call.assert_called_once()
-        args, kwargs = sender._make_call.call_args
+        _, kwargs = sender._make_call.call_args
         assert kwargs["filename"] == "browser.log"
         # Verify the data content was captured correctly
         assert sender._captured_data_content() == browser_log_bytes
@@ -578,7 +573,7 @@ class TestArtifactUploadIntegration:
         sender.upload_artifacts(result)
 
         sender._make_call.assert_called_once()
-        args, kwargs = sender._make_call.call_args
+        _, kwargs = sender._make_call.call_args
         assert kwargs["filename"] == "screenshot.png"
         # Verify the data content was captured correctly
         assert (
@@ -603,7 +598,7 @@ class TestArtifactUploadIntegration:
         sender.upload_artifacts(result)
 
         sender._make_call.assert_called_once()
-        args, kwargs = sender._make_call.call_args
+        _, kwargs = sender._make_call.call_args
         assert kwargs["filename"] == "nav.gif"
         # Verify the data content was captured correctly
         assert (
@@ -629,7 +624,7 @@ class TestArtifactUploadIntegration:
         sender.upload_artifacts(result)
 
         sender._make_call.assert_called_once()
-        args, kwargs = sender._make_call.call_args
+        _, kwargs = sender._make_call.call_args
         assert kwargs["filename"] == "traceback.log"
         # Verify the data content was captured correctly
         assert sender._captured_data_content() == traceback_bytes
@@ -685,7 +680,7 @@ class TestArtifactUploadIntegration:
         sender.upload_artifacts(run)
 
         sender._make_call.assert_called_once()
-        args, kwargs = sender._make_call.call_args
+        _, kwargs = sender._make_call.call_args
         assert kwargs["filename"] == "run_setup.log"
         # Verify the data content was captured correctly
         assert sender._captured_data_content() == run_log_content.encode("utf-8")
@@ -713,7 +708,7 @@ class TestArtifactUploadIntegration:
 
         # Verify the call was made
         sender._make_call.assert_called_once()
-        args, kwargs = sender._make_call.call_args
+        _, kwargs = sender._make_call.call_args
 
         # Verify the filename
         assert kwargs["filename"] == "test.log"
@@ -748,7 +743,7 @@ class TestArtifactUploadIntegration:
 
         # Verify the call was made
         sender._make_call.assert_called_once()
-        args, kwargs = sender._make_call.call_args
+        _, kwargs = sender._make_call.call_args
 
         # Verify the filename
         assert kwargs["filename"] == "test.log"
@@ -933,8 +928,9 @@ class TestArtifactDataHandler:
 
     def test_size_with_file_like_seekable(self):
         """Test size calculation with seekable file-like object."""
-        from pytest_ibutsu.sender import ArtifactDataHandler
         import io
+
+        from pytest_ibutsu.sender import ArtifactDataHandler
 
         content = b"test content"
         file_like = io.BytesIO(content)
@@ -987,7 +983,7 @@ class TestArtifactDataHandler:
 
     def test_is_size_acceptable_over_limit(self):
         """Test size acceptability check over limit."""
-        from pytest_ibutsu.sender import ArtifactDataHandler, UPLOAD_LIMIT
+        from pytest_ibutsu.sender import UPLOAD_LIMIT, ArtifactDataHandler
 
         large_data = b"x" * (UPLOAD_LIMIT + 1)
         handler = ArtifactDataHandler(large_data)
@@ -995,8 +991,9 @@ class TestArtifactDataHandler:
 
     def test_is_size_acceptable_with_type_error(self):
         """Test size acceptability with TypeError."""
-        from pytest_ibutsu.sender import ArtifactDataHandler
         from unittest.mock import patch
+
+        from pytest_ibutsu.sender import ArtifactDataHandler
 
         handler = ArtifactDataHandler(b"test")
 
@@ -1025,8 +1022,9 @@ class TestArtifactDataHandler:
 
     def test_prepared_data_with_file_like(self):
         """Test prepared data with file-like object."""
-        from pytest_ibutsu.sender import ArtifactDataHandler
         import io
+
+        from pytest_ibutsu.sender import ArtifactDataHandler
 
         content = b"test content"
         file_like = io.BytesIO(content)
@@ -1036,8 +1034,9 @@ class TestArtifactDataHandler:
 
     def test_prepared_data_with_text_file_like(self):
         """Test prepared data with text file-like object."""
-        from pytest_ibutsu.sender import ArtifactDataHandler
         import io
+
+        from pytest_ibutsu.sender import ArtifactDataHandler
 
         content = "test content"
         file_like = io.StringIO(content)
@@ -1060,8 +1059,9 @@ class TestArtifactDataHandler:
 
     def test_prepared_data_with_permission_error_file(self, tmp_path, monkeypatch):
         """Test prepared data with PermissionError on file."""
-        from pytest_ibutsu.sender import ArtifactDataHandler
         from pathlib import Path
+
+        from pytest_ibutsu.sender import ArtifactDataHandler
 
         test_file = tmp_path / "restricted.txt"
         test_file.write_text("content")
@@ -1310,8 +1310,9 @@ class TestArtifactDataHandlerFileOperations:
 
     def test_read_file_like_content_with_str_return(self):
         """Test _read_file_like_content when file-like returns string."""
-        from pytest_ibutsu.sender import ArtifactDataHandler
         import io
+
+        from pytest_ibutsu.sender import ArtifactDataHandler
 
         content = "string content"
         file_like = io.StringIO(content)

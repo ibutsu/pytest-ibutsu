@@ -7,14 +7,14 @@ the Pydantic v2 compatibility fixes.
 
 import json
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
 import pytest
-from ibutsu_client.models.result import Result as ClientResult
-from ibutsu_client.models.run import Run as ClientRun
 from ibutsu_client.api.result_api import ResultApi
 from ibutsu_client.api.run_api import RunApi
+from ibutsu_client.models.result import Result as ClientResult
+from ibutsu_client.models.run import Run as ClientRun
 from pydantic import ValidationError
 
 from pytest_ibutsu.modeling import IbutsuTestResult, IbutsuTestRun
@@ -502,7 +502,7 @@ class TestModelFieldCompatibility:
         result_dict = result.to_dict()
 
         # Should not have private fields
-        assert not any(key.startswith("_") for key in result_dict.keys())
+        assert not any(key.startswith("_") for key in result_dict)
 
         # All public fields should be present and mappable to ClientResult
         client_result = ClientResult(**result_dict)
@@ -534,7 +534,7 @@ class TestModelFieldCompatibility:
         run_dict = run.to_dict()
 
         # Should not have private fields
-        assert not any(key.startswith("_") for key in run_dict.keys())
+        assert not any(key.startswith("_") for key in run_dict)
 
         # All public fields should be mappable to ClientRun
         client_run = ClientRun(**run_dict)
