@@ -15,7 +15,8 @@ classifiers = [
 ]
 dependencies = [
   "attrs",
-  "boto3",
+  "boto3>=1.43.123", # python-dateutil >=3.0 is blocker and causes bad resolution
+  # https://github.com/boto/botocore/pull/3715
   "cattrs",
   "ibutsu-client>=3.1.1",
   "pytest",
